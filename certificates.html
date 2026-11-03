@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hopscope · Certificates</title>
+<meta name="hopscope-view" content="certs">
+<link rel="icon" href="assets/img/hopscope.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5.2 18.4 9.4 8.2l3.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.2" cy="18.4" r="1.8" fill="currentColor"/><circle cx="9.4" cy="8.2" r="1.8" fill="currentColor"/><circle cx="15.8" cy="14.6" r="3.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.8" cy="14.6" r="1.5" fill="#ff6b6b"/><path d="m18.6 17.4 2.6 2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <div>
+      <div class="brand-title">Hopscope</div>
+      <div class="brand-sub">Certificates — PSE, CRT, CER, PEM, P7B · 100% local</div>
+    </div>
+  </div>
+  <nav class="toolnav" aria-label="Workspace">
+    <a href="index.html">Cockpit</a>
+    <a href="landscape.html">Map</a>
+    <a href="log-analyzer.html">Logs</a>
+    <a href="scc-traffic.html">Traffic</a>
+    <a href="correlation.html">Timeline</a>
+    <a href="certificates.html" class="active" aria-current="page">Certificates</a>
+  </nav>
+  <div class="topbar-actions">
+    <button class="btn" id="btnAdd" hidden>+ Add files</button>
+    <button class="btn" id="btnPem" hidden title="All certificates in one PEM file">Download PEM bundle</button>
+    <button class="btn" id="btnCsv" hidden>Export CSV</button>
+    <button class="btn" id="btnReport" hidden>Export report (.md)</button>
+    <button class="btn ghost" id="btnReset" hidden>Reset</button>
+    <button class="btn ghost icon" id="btnTheme" title="Change theme" aria-label="Change theme">◐</button>
+  </div>
+</header>
+
+<main>
+  <section id="loader" class="loader">
+    <div>
+      <div class="dropzone" id="dropzone" tabindex="0">
+        <div class="dz-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="40" height="40"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h1>Drop certificates or PSE files here</h1>
+        <p class="muted"><b>.pse</b> (SAPSSLS, SAPSSLC, SAPSSLA, SAPSYS, SAPSRV, …), <b>.crt / .cer / .der / .pem</b>, <b>.p7b</b> bundles, Java keystores (<b>.jks / .ks</b> — Cloud Connector, AS Java), sapgenpse / openssl output (.txt), <b>dev_icm / dev_webdisp</b> traces (certificate subject / issuer / serial seen in handshakes), Cloud Connector <b>scc_core.trc</b> with TLS trace — or a .zip of the <code>sec</code> directory / the SCC log download.</p>
+        <div class="dz-buttons">
+          <button class="btn primary" id="btnPickFiles">Choose files…</button>
+          <button class="btn" id="btnPickFolder">Choose folder…</button>
+        </div>
+        <input type="file" id="inputFiles" multiple hidden>
+        <input type="file" id="inputFolder" webkitdirectory multiple hidden>
+        <p class="status" id="status" role="status"></p>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h2>…or paste certificates</h2>
+        <textarea id="pasteBox" rows="6" placeholder="-----BEGIN CERTIFICATE-----&#10;…&#10;-----END CERTIFICATE-----&#10;&#10;or the output of: sapgenpse maintain_pk -l -p SAPSSLC.pse"></textarea>
+        <div style="margin-top:8px"><button class="btn primary" id="btnPaste">Analyze pasted text</button></div>
+      </div>
+    </div>
+    <div class="guide-preview">
+      <h2>Where to get the certificates</h2>
+      <ul class="guide-list">
+        <li><b class="k">PSE files</b><span>ABAP: <code>/usr/sap/&lt;SID&gt;/&lt;INSTANCE&gt;/sec</code> (SAPSSLS.pse = SSL server Standard, SAPSSLC.pse = SSL client Standard, SAPSSLA.pse = SSL client Anonymous, SAPSYS.pse = System PSE, SAPSNCS.pse = SNC). Web Dispatcher: its <code>sec</code> directory. Download via AL11 / CG3Y or copy from the OS.</span></li>
+        <li><b class="k">PSE content</b><span>Certificates are read when the PSE stores them unencrypted. If none are found, export them from STRUST or run <code>sapgenpse maintain_pk -l -p &lt;pse&gt;</code> and <code>sapgenpse get_my_name -v -p &lt;pse&gt;</code> and load the output text.</span></li>
+        <li><b class="k">STRUST export</b><span>STRUST → select PSE → double-click a certificate → <b>Export certificate</b> (Base64 or binary). Own certificate: <b>Certificate → Export</b>.</span></li>
+        <li><b class="k">Traces</b><span>SMICM → trace level 2–3 → reproduce → <code>dev_icm</code> (Web Dispatcher: <code>dev_webdisp</code>). The certificate references (<code>Subject DN / Issuer DN / SerialNum</code>, CCL error blocks) are matched by issuer + serial number to the loaded PSE / certificate files.</span></li>
+        <li><b class="k">Cloud Connector</b><span>Configuration → On Premise → System Certificate / CA Certificate → download (<code>sys_cert.der</code>, <code>ca_cert.der</code>). With the TLS trace on (Log and Trace Files), <code>scc_core.trc</code> shows the backend server certificate and the CA list it accepts for client certificates — load both to see whether the backend accepts the system certificate.</span></li>
+        <li><b class="k">Partner certificates</b><span>Browser (padlock → certificate → export) or <code>openssl s_client -connect host:443 -showcerts</code> → save the PEM blocks to a file.</span></li>
+        <li><b class="k">Privacy</b><span>Only public certificates are read; private keys are never extracted. Everything stays in this browser.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="app" hidden>
+    <div class="kpis" id="kpis"></div>
+
+    <div class="filters">
+      <label class="field-inline">Reference date <input type="date" id="optRef"></label>
+      <label class="field-inline">Host name check <input type="text" id="optHost" placeholder="e.g. erp.example.com"></label>
+      <input type="search" id="optQ" placeholder="Filter certificates (CN, issuer, SAN, PSE, serial)…">
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Findings <span class="count" id="cntFind"></span></h2></div>
+      <div id="findings"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px" id="trustCard">
+      <div class="card-head"><h2>Trust check</h2><span class="spacer"></span>
+        <label class="field-inline">Trust store (PSE certificate list) <select id="optStore"></select></label>
+      </div>
+      <p class="muted small" style="margin:0 0 10px">Simulates whether the selected PSE accepts the other loaded certificates. For <b>SSSLERR_CLIENT_CERT_UNTRUSTED</b> choose the SSL server PSE of the HTTPS port (SAPSSLS.pse or the SSL server identity of the port) and load the client certificate (with its chain). For <b>SSSLERR_PEER_CERT_UNTRUSTED</b> choose the SSL client PSE (SAPSSLC / SAPSSLA / the SSL client identity of the SM59 destination) and load the server certificate of the target. Every link is checked down to the serial number: issuer name, key identifier (AKI ↔ SKI), issuer serial (AKI) and the signature itself.</p>
+      <div id="trust"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px" id="hsCard" hidden>
+      <div class="card-head"><h2>Client certificate vs. CA list of the server</h2></div>
+      <p class="muted small" style="margin:0 0 10px">From the Cloud Connector TLS trace (<code>scc_core.trc</code> with TLS trace on, or the availability check <code>SCCEndpointValidator</code>): the HTTPS backend asks for a client certificate and names the CAs it accepts (<b>Accepted certificate authorities</b> = the certificate list of its SSL server PSE). A client only sends a certificate issued by one of them, otherwise <b>"No client certificate available"</b>. For principal propagation the backend must receive the SCC system certificate, or it does not trust the Cloud Connector as reverse proxy. Load <code>scc_core.trc</code> together with <code>sys_cert.der</code> (Configuration → On Premise → System Certificate → download).</p>
+      <div id="hsRes"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-head"><h2>Serial number lookup</h2></div>
+      <p class="muted small" style="margin:0 0 10px">Serial number from STRUST, sapgenpse, an ICM / Web Dispatcher trace (<code>SerialNum =</code>), SM21 / security audit log, SAML / XML signature (decimal), openssl or a browser — any notation: hex with or without colons, leading zeros, decimal. Shows the certificate, its chain with the serial of every level, and certificates issued by a CA certificate with this serial.</p>
+      <div class="filters" style="margin:0 0 10px">
+        <input type="search" id="optSerial" placeholder="Serial, e.g. 0A:20:25:11:18:14:35:50 · 0a2025111814 · 7215939227226109264">
+        <input type="search" id="optSerialIss" placeholder="Issuer (optional, part of the DN)">
+      </div>
+      <div id="serialRes"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-head"><h2>Logon ticket ACL check (STRUSTSSO2)</h2></div>
+      <p class="muted small" style="margin:0 0 10px">ABAP systems (ECC / S/4HANA) accept logon / assertion tickets only from systems in the STRUSTSSO2 access control list — identified by <b>system ID, client, subject, issuer and serial number</b> of the issuing system's System PSE certificate. Paste the ACL rows (STRUSTSSO2 → Access Control List, or SE16 table <code>TWPSSO2ACL</code>, tab / "|" / ";" separated) and load the SAPSYS certificate(s) of the issuing system(s).</p>
+      <textarea id="aclBox" rows="4" placeholder="ABC&#9;100&#9;CN=ABC, OU=I0020000001, OU=SAP Web AS, O=SAP Trust Community, C=DE&#9;CN=ABC, OU=I0020000001, OU=SAP Web AS, O=SAP Trust Community, C=DE&#9;20260101120000"></textarea>
+      <div style="margin-top:8px"><button class="btn" id="btnAcl" type="button">Check ACL</button></div>
+      <div id="aclRes" style="margin-top:10px"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-head"><h2>Validity timeline</h2><div class="legend" id="ganttLegend"></div></div>
+      <div class="chart" id="gantt"></div>
+      <div class="muted small" id="ganttNote"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-head"><h2>Certificates <span class="count" id="cntCerts"></span></h2></div>
+      <div class="table-wrap"><table class="simple" id="certTable"></table></div>
+    </div>
+
+    <div class="two-col">
+      <div class="card"><div class="card-head"><h2>Chains</h2></div><div id="chains"></div></div>
+      <div class="card"><div class="card-head"><h2>Files</h2></div><div id="files"></div></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head"><h3 id="modalTitle"></h3><button class="btn ghost icon" id="modalClose" aria-label="Close">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+<div class="tooltip" id="tooltip" hidden></div>
+
+<script src="assets/js/core/engine.js"></script>
+<script src="assets/js/core/widgets.js"></script>
+<script src="assets/js/core/tables.js"></script>
+<script src="assets/js/core/x509.js"></script>
+<script src="assets/js/tools/certs.js"></script>
+<script src="assets/js/tools/certs-ui.js"></script>
+</body>
+</html>

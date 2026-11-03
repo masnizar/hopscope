@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hopscope · Map</title>
+<meta name="hopscope-view" content="map">
+<link rel="icon" href="assets/img/hopscope.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="ls-page">
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5.2 18.4 9.4 8.2l3.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.2" cy="18.4" r="1.8" fill="currentColor"/><circle cx="9.4" cy="8.2" r="1.8" fill="currentColor"/><circle cx="15.8" cy="14.6" r="3.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.8" cy="14.6" r="1.5" fill="#ff6b6b"/><path d="m18.6 17.4 2.6 2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <div>
+      <div class="brand-title">Hopscope</div>
+      <div class="brand-sub">Map — where the request breaks, hop by hop</div>
+    </div>
+  </div>
+  <nav class="toolnav" aria-label="Workspace">
+    <a href="index.html">Cockpit</a>
+    <a href="landscape.html" class="active" aria-current="page">Map</a>
+    <a href="log-analyzer.html">Logs</a>
+    <a href="scc-traffic.html">Traffic</a>
+    <a href="correlation.html">Timeline</a>
+    <a href="certificates.html">Certificates</a>
+  </nav>
+  <div class="topbar-actions">
+    <button class="btn" id="btnAdd" hidden>+ Add files</button>
+    <button class="btn" id="btnReport" hidden>Export report (.md)</button>
+    <button class="btn ghost" id="btnReset" hidden>Reset</button>
+    <button class="btn ghost icon" id="btnTheme" title="Change theme" aria-label="Change theme">◐</button>
+  </div>
+</header>
+
+<main class="ls-main">
+  <section class="ls-hero" id="hero" aria-live="polite">
+    <div class="ls-intro" id="intro">
+      <div class="ls-intro-text">
+        <div class="v-kick">SAP S/4HANA on-premise · reference landscape</div>
+        <h1>Where does the request break?</h1>
+        <p>Drop the logs of one incident — Cloud Connector, <code>dev_icm</code>, <code>dev_webdisp</code>, SM21 / ST22 / SM59 exports, certificates. Every hop of the request is checked on the landscape below; the hop that fails lights up with the cause and the fix. Nothing leaves this browser.</p>
+      </div>
+      <div class="dropzone ls-dz" id="dropzone" tabindex="0">
+        <div class="dz-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="34" height="34"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <b>Drop files, a folder or a .zip</b>
+        <div class="dz-buttons">
+          <button class="btn primary" id="btnPickFiles">Choose files…</button>
+          <button class="btn" id="btnPickFolder">Choose folder…</button>
+          <button class="btn ghost" id="btnExample" title="Synthetic logs: principal propagation from BTP is rejected by the ICM">Try the example</button>
+        </div>
+        <input type="file" id="inputFiles" multiple hidden>
+        <input type="file" id="inputFolder" webkitdirectory multiple hidden>
+        <p class="status" id="status" role="status"></p>
+      </div>
+    </div>
+    <div id="verdict" hidden></div>
+  </section>
+
+  <div class="ls-layout">
+    <section class="card ls-stage" aria-label="Landscape">
+      <div class="ls-bar">
+        <div class="seg" id="pathSeg" role="tablist" aria-label="Request path"></div>
+        <label class="field-inline" id="flowWrap" hidden>Request flow
+          <select id="optFlow" aria-label="Request flow (application)"></select>
+        </label>
+        <span class="spacer"></span>
+        <label class="field-inline">Target system
+          <select id="optTier">
+            <option value="auto">Auto</option><option value="dev">S/4 DEV</option><option value="qas">S/4 QAS</option><option value="prd">S/4 PRD</option>
+          </select>
+        </label>
+        <button class="btn ghost" id="btnReplay" title="Send the request again">↻ Replay</button>
+        <button class="btn ghost" id="btnPause" aria-pressed="false">Pause</button>
+      </div>
+      <p class="ls-scope" id="scope" hidden></p>
+      <div class="ls-map" id="map"></div>
+      <div class="legend ls-legend" id="legend"></div>
+    </section>
+
+    <aside class="ls-side">
+      <section class="card ls-journey">
+        <div class="card-head"><h2 id="journeyTitle">Request path</h2><span class="spacer"></span><span class="muted small" id="journeyNote"></span></div>
+        <ol class="ls-steps" id="journey"></ol>
+      </section>
+      <section class="card ls-inspect" id="inspector"></section>
+    </aside>
+  </div>
+
+  <section class="card ls-sources" id="srcCard" hidden>
+    <div class="card-head"><h2>Loaded logs</h2><span class="spacer"></span><span class="muted small" id="tzNote"></span></div>
+    <div class="table-wrap"><table class="simple" id="srcTable"></table></div>
+    <div id="timeFilter" hidden></div>
+    <div id="otherFindings"></div>
+  </section>
+</main>
+
+<div class="tooltip" id="tooltip" hidden></div>
+
+<script src="assets/js/core/engine.js"></script>
+<script src="assets/js/core/widgets.js"></script>
+<script src="assets/js/core/tables.js"></script>
+<script src="assets/js/core/x509.js"></script>
+<script src="assets/js/core/sapkernel.js"></script>
+<script src="assets/js/modules/scc.js"></script>
+<script src="assets/js/modules/icm.js"></script>
+<script src="assets/js/modules/wdp.js"></script>
+<script src="assets/js/tools/certs.js"></script>
+<script src="assets/js/tools/correlate.js"></script>
+<script src="assets/js/tools/landscape.js"></script>
+<script src="assets/js/tools/landscape-ui.js"></script>
+</body>
+</html>

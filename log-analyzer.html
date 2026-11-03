@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hopscope · Logs</title>
+<meta name="hopscope-view" content="logs">
+<link rel="icon" href="assets/img/hopscope.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5.2 18.4 9.4 8.2l3.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.2" cy="18.4" r="1.8" fill="currentColor"/><circle cx="9.4" cy="8.2" r="1.8" fill="currentColor"/><circle cx="15.8" cy="14.6" r="3.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.8" cy="14.6" r="1.5" fill="#ff6b6b"/><path d="m18.6 17.4 2.6 2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <div>
+      <div class="brand-title">Hopscope</div>
+      <div class="brand-sub">Logs — log &amp; trace analysis, 100% local</div>
+    </div>
+  </div>
+  <nav class="toolnav" aria-label="Workspace">
+    <a href="index.html">Cockpit</a>
+    <a href="landscape.html">Map</a>
+    <a href="log-analyzer.html" class="active" aria-current="page">Logs</a>
+    <a href="scc-traffic.html">Traffic</a>
+    <a href="correlation.html">Timeline</a>
+    <a href="certificates.html">Certificates</a>
+  </nav>
+  <div class="topbar-actions">
+    <label class="field-inline">Component
+      <select id="moduleSelect"></select>
+    </label>
+    <button class="btn" id="btnAdd" hidden>+ Add files</button>
+    <button class="btn" id="btnReport" hidden>Export report (.md)</button>
+    <button class="btn ghost" id="btnReset" hidden>Reset</button>
+    <button class="btn ghost icon" id="btnTheme" title="Change theme" aria-label="Change theme">◐</button>
+  </div>
+</header>
+
+<main>
+  <section id="loader" class="loader">
+    <div class="dropzone" id="dropzone" tabindex="0">
+      <div class="dz-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="40" height="40"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h1 id="dzTitle">Drop log / trace files here</h1>
+      <p id="dzDesc" class="muted"></p>
+      <p class="muted small">Supports text files (.log, .trc, .txt, …), <b>.zip</b> archives (e.g. “Download All” from SCC) and <b>.gz</b>. Multiple files at once.</p>
+      <div class="dz-buttons">
+        <button class="btn primary" id="btnPickFiles">Choose files…</button>
+        <button class="btn" id="btnPickFolder">Choose folder…</button>
+      </div>
+      <input type="file" id="inputFiles" multiple hidden>
+      <input type="file" id="inputFolder" webkitdirectory multiple hidden>
+      <p class="status" id="status" role="status"></p>
+    </div>
+    <div class="guide-preview" id="guidePreview"></div>
+  </section>
+
+  <section id="app" hidden>
+    <nav class="tabs" id="tabs" role="tablist">
+      <button role="tab" data-tab="summary" class="active">Summary</button>
+      <button role="tab" data-tab="findings">Findings <span class="count" id="cntFindings"></span></button>
+      <button role="tab" data-tab="groups">Error Groups <span class="count" id="cntGroups"></span></button>
+      <button role="tab" data-tab="exceptions"><span id="lblExc">Exceptions</span> <span class="count" id="cntExc"></span></button>
+      <button role="tab" data-tab="viewer">Log Viewer</button>
+      <button role="tab" data-tab="info">System Info</button>
+      <button role="tab" data-tab="files">Files <span class="count" id="cntFiles"></span></button>
+      <button role="tab" data-tab="guide">Guide</button>
+    </nav>
+
+    <div class="tab-panel active" id="tab-summary"></div>
+    <div class="tab-panel" id="tab-findings"></div>
+    <div class="tab-panel" id="tab-groups"></div>
+    <div class="tab-panel" id="tab-exceptions"></div>
+    <div class="tab-panel" id="tab-viewer">
+      <div class="filters">
+        <div class="lvl-filter" id="lvlFilter"></div>
+        <input type="search" id="fText" placeholder="Search text (message, stack trace, logger, thread)…">
+        <label class="chk"><input type="checkbox" id="fRegex"> Regex</label>
+        <select id="fFile"><option value="">All files</option></select>
+        <button class="btn ghost" id="btnClearFilter">Clear filters</button>
+        <div class="time-filter" id="timeFilter" hidden></div>
+      </div>
+      <div class="chips" id="chips"></div>
+      <div class="viewer-bar">
+        <span id="viewerCount" class="muted"></span>
+        <span class="spacer"></span>
+        <button class="btn ghost" id="btnSort">Sort: oldest → newest</button>
+        <button class="btn" id="btnCsv">Export CSV</button>
+        <span class="pager">
+          <button class="btn ghost" id="pgPrev" aria-label="Previous page">‹</button>
+          <span id="pgInfo"></span>
+          <button class="btn ghost" id="pgNext" aria-label="Next page">›</button>
+        </span>
+      </div>
+      <div class="table-wrap">
+        <table class="log-table" id="logTable">
+          <thead><tr><th class="c-time">Time</th><th class="c-lvl">Level</th><th class="c-src">Source</th><th class="c-logger">Logger / Thread</th><th>Message</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="tab-panel" id="tab-info"></div>
+    <div class="tab-panel" id="tab-files"></div>
+    <div class="tab-panel" id="tab-guide"></div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head"><h3 id="modalTitle"></h3><button class="btn ghost icon" id="modalClose" aria-label="Close">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+<div class="tooltip" id="tooltip" hidden></div>
+
+<script src="assets/js/core/engine.js"></script>
+<script src="assets/js/core/widgets.js"></script>
+<script src="assets/js/core/sapkernel.js"></script>
+<script src="assets/js/core/x509.js"></script>
+<!-- SAP component modules: register new module files here -->
+<script src="assets/js/modules/scc.js"></script>
+<script src="assets/js/modules/icm.js"></script>
+<script src="assets/js/modules/wdp.js"></script>
+<script src="assets/js/core/ui.js"></script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hopscope · Privacy</title>
+<meta name="description" content="Hopscope privacy policy: your log files are processed only in your browser. No upload, no cookies, no analytics, no third-party scripts.">
+<link rel="icon" href="assets/img/hopscope.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/site.css">
+<script>try { var t = localStorage.getItem('sapts.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
+</head>
+<body class="site">
+<header class="topbar">
+  <a class="brand" href="index.html" style="color:inherit;text-decoration:none">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5.2 18.4 9.4 8.2l3.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.2" cy="18.4" r="1.8" fill="currentColor"/><circle cx="9.4" cy="8.2" r="1.8" fill="currentColor"/><circle cx="15.8" cy="14.6" r="3.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.8" cy="14.6" r="1.5" fill="#ff6b6b"/><path d="m18.6 17.4 2.6 2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <div><div class="brand-title">Hopscope</div><div class="brand-sub">SAP incident cockpit</div></div>
+  </a>
+  <nav class="site-nav" aria-label="Site">
+    <a href="docs.html">Docs</a>
+    <a href="privacy.html" aria-current="page">Privacy</a>
+    <a href="disclaimer.html">Disclaimer</a>
+    <a class="primary" href="index.html">Open the cockpit</a>
+  </nav>
+</header>
+
+<main>
+  <article class="prose" style="margin:0 auto">
+    <h1>Privacy policy</h1>
+    <p class="meta">Effective 3 November 2026</p>
+    <p class="lead">Hopscope analyses your log files in your browser. The files are not uploaded, stored or shared by this website.</p>
+
+    <h2>In short</h2>
+    <ul>
+      <li>No upload: files are read and analysed on your computer, in the browser tab.</li>
+      <li>No account, no cookies, no analytics, no advertising, no tracking.</li>
+      <li>No third-party scripts, fonts or other resources: the site loads only its own files.</li>
+      <li>The only thing the site saves is your display preference (theme), in your own browser.</li>
+    </ul>
+
+    <h2>Files you add</h2>
+    <p>When you drop, choose or paste files, the browser's file API hands their content to the Hopscope scripts in the same tab. The scripts parse and analyse it in memory. Nothing is sent over the network. When you reload or close the tab, or click <b>New incident</b>, the loaded content is discarded.</p>
+    <p>Logs usually contain personal and confidential data, such as user IDs, e-mail addresses, IP addresses, host names and certificates. Because the analysis happens on your device, you stay in control of that data. Analyse only logs you are allowed to handle under your organisation's rules.</p>
+
+    <h2>Data stored in your browser</h2>
+    <p>Hopscope uses your browser's local storage for interface preferences only, under keys that start with <code>sapts.</code> (for example the theme). This data stays in your browser, is never sent anywhere, and you can delete it at any time through your browser's site data settings. No log content is stored.</p>
+
+    <h2>Reports you export</h2>
+    <p>Exports (Markdown reports, CSV, HAR, PEM) are created on your device and saved where you choose. They can contain data from your logs. Check them before you share them; the Traffic workspace masks authorisation headers, cookies and SSO tokens by default.</p>
+
+    <h2>Hosting</h2>
+    <p>The website is a set of static files. Like any web server, the hosting provider that delivers these files may keep standard technical access logs (such as IP address, browser type, requested page and time) for operation and security, under the provider's own privacy statement. These logs never contain the files you analyse, because those never leave your browser. If you download Hopscope and open it from your disk, no web server is involved at all.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes, the new version is published on this page with a new effective date.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy: <a href="https://www.linkedin.com/in/nizarfanany">https://www.linkedin.com/in/nizarfanany</a>.</p>
+  </article>
+</main>
+<footer class="site-foot"><div class="in">
+  <nav aria-label="Site"><a href="index.html">Cockpit</a><a href="docs.html">Docs</a><a href="privacy.html">Privacy</a><a href="disclaimer.html">Disclaimer</a></nav>
+  <p>Hopscope is an independent project, not affiliated with or endorsed by SAP SE. SAP and the SAP product names used here are trademarks of SAP SE.</p>
+  <p>Made by <a href="https://www.linkedin.com/in/nizarfanany" rel="author">Nizar Fanany</a></p>
+</div></footer>
+</body>
+</html>

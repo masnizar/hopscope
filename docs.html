@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hopscope · Docs</title>
+<meta name="description" content="How to use Hopscope: which SAP logs to collect, how to read the landscape map and the request replay, and playbooks for principal propagation and ICM certificate errors.">
+<link rel="icon" href="assets/img/hopscope.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+<link rel="stylesheet" href="assets/css/site.css">
+<script>try { var t = localStorage.getItem('sapts.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}</script>
+</head>
+<body class="site">
+<header class="topbar">
+  <a class="brand" href="index.html" style="color:inherit;text-decoration:none">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5.2 18.4 9.4 8.2l3.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.2" cy="18.4" r="1.8" fill="currentColor"/><circle cx="9.4" cy="8.2" r="1.8" fill="currentColor"/><circle cx="15.8" cy="14.6" r="3.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.8" cy="14.6" r="1.5" fill="#ff6b6b"/><path d="m18.6 17.4 2.6 2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <div><div class="brand-title">Hopscope</div><div class="brand-sub">SAP incident cockpit</div></div>
+  </a>
+  <nav class="site-nav" aria-label="Site">
+    <a href="docs.html" aria-current="page">Docs</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="disclaimer.html">Disclaimer</a>
+    <a class="primary" href="index.html">Open the cockpit</a>
+  </nav>
+</header>
+
+<main>
+  <div class="doc-grid">
+    <nav class="toc" aria-label="On this page">
+      <b>On this page</b>
+      <a href="#what">What Hopscope does</a>
+      <a href="#start">Quick start</a>
+      <a href="#collect">What to collect</a>
+      <a href="#map">Reading the map</a>
+      <a href="#replay">Request replay</a>
+      <a href="#workspaces">Workspaces</a>
+      <a href="#playbook-pp">Playbook: principal propagation</a>
+      <a href="#playbook-cert">Playbook: client certificate untrusted</a>
+      <a href="#privacy">Your data</a>
+      <a href="#limits">Limits and FAQ</a>
+    </nav>
+
+    <article class="prose">
+      <h1 id="what">Find the hop where an SAP request breaks</h1>
+      <p class="lead">Hopscope reads the logs of one incident — SAP Cloud Connector, ICM, Web Dispatcher, SM21, ST22, SM59, certificates — and shows on a landscape map which hop of the request fails, with the evidence lines and the fix.</p>
+      <p>A request from an SAP BTP application to SAP S/4HANA crosses up to eight hops: user, BTP application, Connectivity service, Cloud Connector, network and TLS, ICM, logon and the ABAP application. Each hop writes its own log, in its own format, often on a system another team owns. Hopscope puts them on one page and one time line.</p>
+      <figure>
+        <img src="assets/img/cockpit-example.png" width="1600" height="1000" alt="The Hopscope cockpit with the built-in example: the landscape map marks hop 6, the ICM of the S/4 PRD system, as the failing hop; the hop list on the right explains each hop.">
+        <figcaption>The cockpit with the built-in example (synthetic data). Hop 6, the ICM, rejects the forwarded user certificate.</figcaption>
+      </figure>
+      <p>Everything runs in your browser. There is no server and no upload; the files you add stay on your computer. See <a href="#privacy">Your data</a>.</p>
+
+      <h2 id="start">Quick start</h2>
+      <ol class="steps">
+        <li><b>Open the cockpit.</b> Use <a href="index.html">the cockpit</a> in Microsoft Edge or Google Chrome. Offline use works too: download the files and open <code>index.html</code>.</li>
+        <li><b>Add the evidence.</b> The Evidence page is the one place for files. Drop files, a folder or a <code>.zip</code>, choose them, or paste text (PEM certificates, <code>sapgenpse</code> output, an SM59 result, copied log lines). <b>Try the example</b> loads a synthetic principal-propagation case.</li>
+        <li><b>Read the verdict.</b> After the first files the cockpit opens the Map. The top bar names the failing hop, for example <i>Breaks at hop 6 · S/4 PRD — ICM (HTTPS port)</i>.</li>
+        <li><b>Drill down and export.</b> Click a hop for the cause, the evidence and the fix. Each workspace exports its own report (Markdown, CSV, HAR, PEM).</li>
+      </ol>
+      <p>Hopscope recognises each file by its name and content. When a file is read as the wrong source, change <b>Read as</b> in the Evidence file list and every workspace analyses it again.</p>
+
+      <h2 id="collect">What to collect</h2>
+      <p>Reproduce the problem with the traces switched on, note the time, and collect the files below. The Evidence page shows the same checklist and which sources are still missing.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Source</th><th>Shows</th><th>How to collect</th></tr></thead>
+        <tbody>
+          <tr><td>Cloud Connector logs</td><td>Tunnel, access control, principal propagation, TLS to the backend</td><td>Cloud Connector → Log and Trace Files → loggers <b>ALL</b> (and TLS trace) → reproduce → Download All (.zip)</td></tr>
+          <tr><td>Cloud Connector traffic trace</td><td>Every HTTP request and response through the tunnel (302 to the IdP, 4xx, 5xx)</td><td>Log and Trace Files → payload trace on → reproduce → <code>tunnel_traffic_*.trc</code></td></tr>
+          <tr><td>ICM trace (<code>dev_icm</code>)</td><td>TLS, client certificates, trusted reverse proxy, ICM resources</td><td>SM51 → the instance behind the Cloud Connector mapping → SMICM → trace level <b>2</b> → reset → reproduce → download</td></tr>
+          <tr><td>Web Dispatcher trace</td><td>Routing, backend servers, SSL re-encryption</td><td><code>dev_webdisp</code> from the Web Dispatcher work directory (trace level 2)</td></tr>
+          <tr><td>System log (SM21)</td><td>Logon failures, SSL, ICM and communication errors</td><td>SM21 → time range → Export → Spreadsheet or Text with Tabs</td></tr>
+          <tr><td>ABAP dumps (ST22)</td><td>Runtime errors behind HTTP 500 and timeouts</td><td>ST22 → time range → Export → Spreadsheet or Text with Tabs</td></tr>
+          <tr><td>Connection test (SM59)</td><td>Outbound calls from S/4: SSL, network, HTTP status</td><td>SM59 → destination → Connection Test → save the result as text, or paste it</td></tr>
+          <tr><td>Certificates</td><td>Expiry, chains, trust, Cloud Connector system certificate vs. CA list</td><td>STRUST export (<code>.cer</code>, <code>.crt</code>, <code>.pem</code>), PSE files, the Cloud Connector <code>sys_cert.der</code>, or pasted PEM / <code>sapgenpse</code> output</td></tr>
+          <tr><td>Work process traces</td><td>Work process restarts, database, memory</td><td>SM50 → work process → Trace → Display File, or AL11 → DIR_HOME (<code>dev_w*</code>, <code>dev_disp</code>)</td></tr>
+          <tr><td>HTTP access logs</td><td>Status code per request (401, 403, 5xx)</td><td><code>icm/HTTP/logging_&lt;n&gt;</code> or the Web Dispatcher access log</td></tr>
+        </tbody>
+      </table></div>
+      <div class="note warn"><b>Take the ICM trace on the right instance.</b> The Cloud Connector talks to one internal host. A <code>dev_icm</code> of another application server does not contain its requests; Hopscope warns when the trace belongs to another host.</div>
+
+      <h2 id="map">Reading the map</h2>
+      <p>The map draws a reference SAP S/4HANA on-premise landscape with SAP BTP: application, Connectivity service and Cloud Identity in the cloud; secure tunnel, Cloud Connectors, load balancing, Web Dispatchers and the S/4 systems (DEV, QAS, PRD) with ICM, logon and ABAP layers in the customer network; and a DR site. Pick the request path above the map:</p>
+      <ul>
+        <li><b>Cloud → on-premise</b>: a BTP application through the Cloud Connector.</li>
+        <li><b>Browser → Fiori</b>: a browser through the Web Dispatcher.</li>
+        <li><b>S/4 → outbound</b>: SM59 destinations and the ICM as HTTP client.</li>
+      </ul>
+      <p>The target system (DEV, QAS or PRD) comes from the SID in the trace header, the file name or the host name; change it with <b>Target system</b>. Every hop gets one of these verdicts:</p>
+      <ul class="status-list">
+        <li><i class="st-fail">✕</i><span><b>Fails here</b>: the cause is at this hop.</span></li>
+        <li><i class="st-warn">!</i><span><b>Warning or symptom</b>: something is wrong, or this is a consequence of an earlier hop.</span></li>
+        <li><i class="st-ok">✓</i><span><b>Works</b>: the logs prove the hop worked, for example "3 requests arrived" or "backend connection opened".</span></li>
+        <li><i class="st-ok">✓</i><span><b>No errors in the logs</b>: a loaded log covers the hop and shows nothing wrong.</span></li>
+        <li><i class="st-none">–</i><span><b>Not reached</b>: behind the failing hop.</span></li>
+        <li><i class="st-none">?</i><span><b>No log loaded</b>: the inspector says which log covers this hop and how to collect it.</span></li>
+      </ul>
+      <p>Findings sit on the hop where the error <i>is</i>, not where it was logged. An IdP redirect logged by the Cloud Connector belongs to the S/4 logon, and is marked as a symptom when an earlier hop already fails.</p>
+      <h3>Request flows and the analysis window</h3>
+      <p>One Cloud Connector usually carries several applications. <b>Request flow</b> lists them (subaccount and system mapping), each with its own verdict; pick one to see only its requests. Without a chosen time range, the map analyses the minutes around the Cloud Connector requests, because <code>dev_icm</code> files often cover weeks of unrelated errors. <b>Use all entries</b> switches back.</p>
+
+      <h2 id="replay">Request replay</h2>
+      <p>When the logs contain Cloud Connector requests, the map replays them: one packet per request, in their real order and spacing, sped up. Each packet ends at the hop where <i>that</i> request stopped.</p>
+      <ul>
+        <li>At a failing hop the packet bursts red and the line ends. Nothing flows past it, and the hop shows how many requests stopped there (<b>✕ 12</b>).</li>
+        <li>Requests that got through end green at the application (<b>✓ 22</b>).</li>
+        <li>A request the logon redirected to the identity provider bounces to Cloud Identity (<b>302</b>).</li>
+      </ul>
+      <p>Where a request stopped comes from its own evidence: an ICM "Reject untrusted forwarded certificate" at its time (or the forwarded certificate accepted, so it passed), its IdP redirect, its own Cloud Connector entries (connection ID), or a backend connection that was never opened. The panel at the top left shows the replay clock in log time and how many requests were sent, got through or stopped. Paths without request-level logs say so, and their packets only show the verdict.</p>
+
+      <h2 id="workspaces">Workspaces</h2>
+      <ul>
+        <li><b>Map</b>: where the request breaks, the evidence and the fix, with the request replay.</li>
+        <li><b>Timeline</b>: all sources on one time line in SAP server time, correlated incidents across sources, certificate expiry markers.</li>
+        <li><b>Logs</b>: every entry of the Cloud Connector, ICM and Web Dispatcher logs with filters, error groups, root-cause exceptions and a knowledge base of known patterns.</li>
+        <li><b>Traffic</b>: the Cloud Connector traffic trace decoded into HTTP requests and responses, with login-redirect detection, masking of sensitive headers and HAR export.</li>
+        <li><b>Certificates</b>: PSE, CRT, CER, PEM, P7B and keystores; chains verified by signature, trust check against a PSE, the Cloud Connector system certificate against the backend's CA list, expiry.</li>
+      </ul>
+
+      <h2 id="playbook-pp">Playbook: principal propagation through the Cloud Connector</h2>
+      <p>Symptom: the BTP application gets HTTP 302, 401 or 405 from an OData service; the backend sends the request to the SAML identity provider instead of logging on the user.</p>
+      <ol>
+        <li>Cloud Connector: loggers <b>ALL</b>, TLS trace on, payload trace on. Reproduce, then <b>Check availability of internal host</b> for the mapping. Download All, then switch the traces off.</li>
+        <li>SMICM trace level 2 on the instance behind the mapping (SM51 → that instance). Reproduce again and download <code>dev_icm</code>.</li>
+        <li>Add both to Hopscope. The Map shows which hop breaks: tunnel, Cloud Connector, TLS to the backend, ICM trusted reverse proxy, or logon.</li>
+        <li>If the ICM fails: the finding <i>Reverse proxy / Cloud Connector not trusted</i> gives the exact <code>icm/trusted_reverse_proxy_&lt;n&gt;</code> value for the certificate the Cloud Connector really presents. Check the DEFAULT profile history too: an automatically generated import profile can drop an entry that was never activated.</li>
+        <li>If the logon fails: check the certificate rule (CERTRULE), the user (exists, not locked, e-mail unique) and <code>login/certificate_mapping_rulebased</code>.</li>
+        <li>After the fix, collect the logs again. The replay should show the requests reaching the application.</li>
+      </ol>
+
+      <h2 id="playbook-cert">Playbook: ICM "SSSLERR_CLIENT_CERT_UNTRUSTED"</h2>
+      <ol>
+        <li>SMICM → trace level 3 → reset → reproduce → save <code>dev_icm</code> → set the level back.</li>
+        <li><b>Logs</b> (ICM): the finding <i>Client certificate not trusted</i> lists subject, issuer and peer.</li>
+        <li>Collect the SSL server PSE of the port and the client certificate with its chain.</li>
+        <li><b>Certificates</b>: load both and run the trust check with the SSL server PSE. It names the required CA (name, key ID, serial) or the expired chain element.</li>
+        <li>STRUST: import the certificate into the SSL server PSE on all instances, then restart the ICM (SMICM → Exit Soft → Global) and verify with a new trace.</li>
+      </ol>
+
+      <h2 id="privacy">Your data</h2>
+      <p>Hopscope reads your files with the browser's file API and analyses them in memory, in your browser tab. It sends nothing to a server, loads no third-party scripts, and sets no cookies. Closing or reloading the tab discards the loaded files. Details are in the <a href="privacy.html">privacy policy</a>.</p>
+      <div class="note warn">Logs contain host names, IP addresses, user IDs and certificates. Only analyse logs you are allowed to handle, and check exported reports before you share them. The Traffic workspace masks authorisation headers, cookies and SSO tokens by default.</div>
+
+      <h2 id="limits">Limits and FAQ</h2>
+      <h3>Which browsers?</h3>
+      <p>Built and tested with Microsoft Edge. Other Chromium-based browsers, such as Google Chrome, should behave the same.</p>
+      <h3>How large can the files be?</h3>
+      <p>Large traces work but take time: a 33 MB Cloud Connector trace takes about 75 seconds on a business laptop.</p>
+      <h3>Why do the times differ from my SAP GUI?</h3>
+      <p>The time base is SAP server time. The server offset comes from the HTTP <code>Date</code> headers in ICM and Web Dispatcher traces; Cloud Connector logs (UTC) are converted. You can set the server time zone and shift single files in the Timeline workspace.</p>
+      <h3>Is the verdict always right?</h3>
+      <p>No tool reads every situation correctly. Hopscope matches known log patterns and shows the evidence it used, so you can check it. Verify findings before you change a production system, and follow your change process. See the <a href="disclaimer.html">disclaimer</a>.</p>
+      <h3>Does it replace SAP Support?</h3>
+      <p>No. When the cause is a product defect, open an incident with SAP. Hopscope helps you open it in the right component, with the failing hop and the evidence attached.</p>
+      <h3>Can I check the engine?</h3>
+      <p>Yes: <a href="tests/selftest.html">tests/selftest.html</a> runs the parser and rule self-test in your browser with synthetic data.</p>
+    </article>
+  </div>
+</main>
+<footer class="site-foot"><div class="in">
+  <nav aria-label="Site"><a href="index.html">Cockpit</a><a href="docs.html">Docs</a><a href="privacy.html">Privacy</a><a href="disclaimer.html">Disclaimer</a></nav>
+  <p>Hopscope is an independent project, not affiliated with or endorsed by SAP SE. SAP and the SAP product names used here are trademarks of SAP SE.</p>
+  <p>Made by <a href="https://www.linkedin.com/in/nizarfanany" rel="author">Nizar Fanany</a></p>
+</div></footer>
+</body>
+</html>

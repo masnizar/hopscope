@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hopscope · Timeline</title>
+<meta name="hopscope-view" content="timeline">
+<link rel="icon" href="assets/img/hopscope.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5.2 18.4 9.4 8.2l3.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.2" cy="18.4" r="1.8" fill="currentColor"/><circle cx="9.4" cy="8.2" r="1.8" fill="currentColor"/><circle cx="15.8" cy="14.6" r="3.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.8" cy="14.6" r="1.5" fill="#ff6b6b"/><path d="m18.6 17.4 2.6 2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <div>
+      <div class="brand-title">Hopscope</div>
+      <div class="brand-sub">Timeline — Cloud Connector, ICM, Web Dispatcher, SM21, ST22, SM59 &amp; STRUST on one time line</div>
+    </div>
+  </div>
+  <nav class="toolnav" aria-label="Workspace">
+    <a href="index.html">Cockpit</a>
+    <a href="landscape.html">Map</a>
+    <a href="log-analyzer.html">Logs</a>
+    <a href="scc-traffic.html">Traffic</a>
+    <a href="correlation.html" class="active" aria-current="page">Timeline</a>
+    <a href="certificates.html">Certificates</a>
+  </nav>
+  <div class="topbar-actions">
+    <button class="btn" id="btnAdd" hidden>+ Add files</button>
+    <button class="btn" id="btnReport" hidden>Export report (.md)</button>
+    <button class="btn ghost" id="btnReset" hidden>Reset</button>
+    <button class="btn ghost icon" id="btnTheme" title="Change theme" aria-label="Change theme">◐</button>
+  </div>
+</header>
+
+<main>
+  <section id="loader" class="loader">
+    <div class="dropzone" id="dropzone" tabindex="0">
+      <div class="dz-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="40" height="40"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h1>Drop all files of the incident here</h1>
+      <p class="muted">dev_webdisp, dev_icm, dev_w*, dev_disp, SM21 / ST22 exports (.txt, .csv, .xlsx), SM59 test results, STRUST certificates (.cer/.crt/.pem or copied list), HTTP logs, Cloud Connector logs — or a .zip with all of them.</p>
+      <div class="dz-buttons">
+        <button class="btn primary" id="btnPickFiles">Choose files…</button>
+        <button class="btn" id="btnPickFolder">Choose folder…</button>
+      </div>
+      <input type="file" id="inputFiles" multiple hidden>
+      <input type="file" id="inputFolder" webkitdirectory multiple hidden>
+      <p class="status" id="status" role="status"></p>
+    </div>
+    <div class="guide-preview">
+      <h2>How to collect each source (same time range)</h2>
+      <ul class="guide-list">
+        <li><b class="k">Web Dispatcher</b><span><code>dev_webdisp</code> from the work directory of the Web Dispatcher instance (or web administration → Monitor → Trace).</span></li>
+        <li><b class="k">ICM (SMICM)</b><span>SMICM → Goto → Trace Level → 2 (3 for TLS handshake details) → Goto → Trace File → Reset → reproduce → Goto → Trace File → Display All → save as local file, or <code>dev_icm</code> via AL11 / CG3Y. Any name containing <code>dev_icm</code> works (e.g. <code>DV1_dev_icm.txt</code>). Set the level back afterwards.</span></li>
+        <li><b class="k">Cloud Connector</b><span>SCC UI → Configuration → Log And Trace Files → set the Cloud Connector loggers to <b>All</b> → reproduce → download <code>ljs_trace.log</code> / <code>scc_core</code> (or "Download All" as .zip) → reset the level. Backend requests, system mappings and principal propagation are only logged at that level.</span></li>
+        <li><b class="k">Time zones</b><span>SCC logs in UTC, SAP traces in server time. The server offset is detected from the HTTP <code>Date: … GMT</code> headers in dev_icm / dev_webdisp and the SCC times are converted; override with "Server time zone".</span></li>
+        <li><b class="k">dev_w* / dev_disp</b><span>SM50 → select work process → Administration → Trace → Display File (save), or AL11 → DIR_HOME.</span></li>
+        <li><b class="k">SM21</b><span>Select the time range → list → <b>Export</b> → Spreadsheet (.xlsx) or Local File → Text with Tabs. Keep the column headers (Date, Time, Message Text, …).</span></li>
+        <li><b class="k">ST22</b><span>Select the time range → dump list → <b>Export</b> → Spreadsheet or Text with Tabs (columns Date, Time, Runtime Error, Exception, Program, User…).</span></li>
+        <li><b class="k">SM59</b><span>Connection Test of the destination → System → List → Save → Local File (or copy the result into a .txt file). Without a timestamp the file date is used.</span></li>
+        <li><b class="k">STRUST</b><span>Double-click the certificate → Export (.crt/.cer/.pem), or copy the certificate details / <code>sapgenpse maintain_pk -l</code> output into a .txt file.</span></li>
+        <li><b class="k">Privacy</b><span>Everything is processed locally in this browser.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="app" hidden>
+    <div class="card">
+      <div class="card-head">
+        <h2>Sources</h2>
+        <span class="spacer"></span>
+        <label class="field-inline">Correlation window
+          <select id="optWindow">
+            <option value="30">30 s</option><option value="60">1 min</option><option value="120" selected>2 min</option>
+            <option value="300">5 min</option><option value="900">15 min</option><option value="3600">1 h</option>
+          </select>
+        </label>
+        <label class="field-inline">Server time zone
+          <select id="optTz" title="Time base = SAP server local time. Logs with an explicit zone (Cloud Connector: UTC) are converted to it."></select>
+        </label>
+        <label class="field-inline">Date format in exports
+          <select id="optDate">
+            <option value="auto">Auto</option><option value="DMY">DD.MM.YYYY</option><option value="MDY">MM/DD/YYYY</option><option value="YMD">YYYY-MM-DD</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrap"><table class="simple" id="srcTable"></table></div>
+      <p class="small" id="tzNote" style="margin:8px 0 0"></p>
+      <p class="muted small" style="margin:4px 0 0" id="srcHint">Wrong source? Change it in the list. A single file in another time zone? Use “Shift (h)”.</p>
+    </div>
+
+    <div class="kpis" id="kpis" style="margin-top:14px"></div>
+
+    <div class="card">
+      <div class="card-head"><h2>Findings &amp; solutions <span class="count" id="cntFind"></span></h2><span class="spacer"></span><span class="muted small">for the selected time range · all sources</span></div>
+      <div id="findings"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>Timeline</h2><div class="legend" id="laneLegend"></div></div>
+      <div id="timeFilter" hidden></div>
+      <div class="chart lanes" id="lanes"></div>
+      <div class="muted small" id="lanesNote"></div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <div class="card-head"><h2>Correlated incidents <span class="count" id="cntInc"></span></h2><span class="spacer"></span>
+        <label class="field-inline">Sort <select id="optSort"><option value="score">Most significant</option><option value="time">Time</option></select></label>
+      </div>
+      <div id="incidents"></div>
+    </div>
+
+    <div class="two-col">
+      <div class="card"><div class="card-head"><h2>Certificates (STRUST &amp; traces)</h2></div><div id="certs"></div></div>
+      <div class="card"><div class="card-head"><h2>Connection tests (SM59)</h2></div><div id="tests"></div></div>
+    </div>
+    <div class="two-col">
+      <div class="card"><div class="card-head"><h2>Top ABAP dumps (ST22)</h2></div><div id="topDumps"></div></div>
+      <div class="card"><div class="card-head"><h2>Top error codes / messages</h2></div><div id="topCodes"></div></div>
+    </div>
+
+    <div class="card" style="margin-top:14px" id="eventsCard">
+      <div class="card-head"><h2>All events</h2><span class="spacer"></span><span class="muted small" id="evCount"></span></div>
+      <div class="filters" style="margin-bottom:8px">
+        <div class="lvl-filter" id="evSrc"></div>
+        <select id="evLevel" aria-label="Level"><option value="bad">WARN and worse</option><option value="err">ERROR only</option><option value="all">All events</option></select>
+        <input type="search" id="evText" placeholder="Search events…">
+        <button class="btn ghost" id="evClear">Clear</button>
+      </div>
+      <div class="chips" id="evChips"></div>
+      <div class="table-wrap">
+        <table class="log-table" id="evTable">
+          <thead><tr><th class="c-time">Time</th><th class="c-src">Source</th><th class="c-lvl">Level</th><th class="c-logger">Code</th><th>Event</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="viewer-bar" style="margin-top:8px"><span class="spacer"></span>
+        <span class="pager"><button class="btn ghost" id="evPrev" aria-label="Previous page">‹</button><span id="evPage"></span><button class="btn ghost" id="evNext" aria-label="Next page">›</button></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head"><h3 id="modalTitle"></h3><button class="btn ghost icon" id="modalClose" aria-label="Close">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+<div class="tooltip" id="tooltip" hidden></div>
+
+<script src="assets/js/core/engine.js"></script>
+<script src="assets/js/core/widgets.js"></script>
+<script src="assets/js/core/tables.js"></script>
+<script src="assets/js/core/x509.js"></script>
+<script src="assets/js/core/sapkernel.js"></script>
+<script src="assets/js/modules/scc.js"></script>
+<script src="assets/js/modules/icm.js"></script>
+<script src="assets/js/modules/wdp.js"></script>
+<script src="assets/js/tools/certs.js"></script>
+<script src="assets/js/tools/correlate.js"></script>
+<script src="assets/js/tools/correlate-ui.js"></script>
+</body>
+</html>

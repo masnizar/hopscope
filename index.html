@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hopscope</title>
+<meta name="description" content="Hopscope — SAP incident cockpit: drop the logs of one incident and see the hop where the request breaks.">
+<link rel="icon" href="assets/img/hopscope.svg" type="image/svg+xml">
+<meta property="og:title" content="Hopscope - SAP incident cockpit">
+<meta property="og:description" content="Drop the logs of one SAP incident and see the hop where the request breaks. Runs in your browser; nothing is uploaded.">
+<meta property="og:image" content="https://masnizar.github.io/hopscope/assets/img/cockpit-example.png">
+<meta property="og:url" content="https://masnizar.github.io/hopscope/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body class="hs">
+<header class="hs-top">
+  <a class="hs-brand" href="index.html" aria-label="Hopscope — start page">
+    <span class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" width="22" height="22"><path d="M5.2 18.4 9.4 8.2l3.6 3.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="5.2" cy="18.4" r="1.8" fill="currentColor"/><circle cx="9.4" cy="8.2" r="1.8" fill="currentColor"/><circle cx="15.8" cy="14.6" r="3.9" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="15.8" cy="14.6" r="1.5" fill="#ff6b6b"/><path d="m18.6 17.4 2.6 2.6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <span class="hs-name-wrap"><b class="hs-name">Hopscope</b><span class="hs-tag">SAP incident cockpit</span></span>
+  </a>
+  <button class="hs-verdict" id="verdict" type="button" hidden></button>
+  <div class="hs-incident" id="incident" hidden></div>
+  <span class="spacer"></span>
+  <div class="hs-actions">
+    <button class="btn ghost" id="btnNew" type="button" title="New incident — remove all loaded files" hidden><span class="hs-long">New incident</span><span class="hs-short">New</span></button>
+    <a class="btn ghost" href="docs.html" style="text-decoration:none">Docs</a>
+    <button class="btn ghost icon" id="btnTheme" type="button" title="Change theme" aria-label="Change theme">◐</button>
+  </div>
+  <input type="file" id="inputFiles" multiple hidden>
+  <input type="file" id="inputFolder" webkitdirectory multiple hidden>
+</header>
+
+<div class="hs-body">
+  <nav class="hs-rail" id="rail" aria-label="Workspaces"></nav>
+  <main class="hs-main" id="stage">
+    <div class="hs-status" id="status" role="status" hidden></div>
+    <section class="hs-evidence" id="evidence" hidden></section>
+  </main>
+</div>
+
+<div class="hs-drop" id="drop" hidden>
+  <div class="hs-drop-box">
+    <svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><path d="M12 15V4m0 0-4 4m4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <b>Drop to add to the incident</b>
+    <span>Logs, traces, SM21 / ST22 / SM59 exports, certificates, folders or a .zip — read once, sent to every workspace, never leaves this browser.</span>
+  </div>
+</div>
+
+<script src="assets/js/core/engine.js"></script>
+<script src="assets/js/core/widgets.js"></script>
+<script src="assets/js/core/tables.js"></script>
+<script src="assets/js/core/x509.js"></script>
+<script src="assets/js/core/sapkernel.js"></script>
+<script src="assets/js/modules/scc.js"></script>
+<script src="assets/js/modules/icm.js"></script>
+<script src="assets/js/modules/wdp.js"></script>
+<script src="assets/js/tools/certs.js"></script>
+<script src="assets/js/tools/correlate.js"></script>
+<script src="assets/js/tools/landscape.js"></script>
+<script src="assets/js/tools/landscape-ui.js"></script>
+<script src="assets/js/cockpit.js"></script>
+</body>
+</html>

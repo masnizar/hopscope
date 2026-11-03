@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Parser Self-test</title>
+<style>
+  body { font: 14px/1.5 system-ui, "Segoe UI", sans-serif; margin: 20px; background: #fcfcfb; color: #0b0b0b; }
+  .ok { color: #006300; } .fail { color: #d03b3b; font-weight: 600; }
+  pre { background: #f3f2ee; padding: 10px; border-radius: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Parser &amp; rule self-test</h1>
+<p>Open this file in a browser after changing parsers/rules. The test data below is <b>synthetic</b>, not real logs.</p>
+<div id="out"></div>
+<script src="../assets/js/core/engine.js"></script>
+<script src="../assets/js/core/widgets.js"></script>
+<script src="../assets/js/core/sapkernel.js"></script>
+<script src="../assets/js/core/tables.js"></script>
+<script src="../assets/js/core/x509.js"></script>
+<script src="../assets/js/modules/scc.js"></script>
+<script src="../assets/js/modules/icm.js"></script>
+<script src="../assets/js/modules/wdp.js"></script>
+<script src="../assets/js/tools/correlate.js"></script>
+<script src="../assets/js/tools/certs.js"></script>
+<script src="../assets/js/tools/traffic.js"></script>
+<script src="../assets/js/tools/landscape.js"></script>
+<script src="../assets/js/tools/landscape-ui.js"></script>
+<script>
+(function () {
+  const results = [];
+  const check = (name, cond, info) => results.push({ name, ok: !!cond, info: info || '' });
+
+  /* ---- SCC ljs_trace (synthetic) ---- */
+  const scc = [
+    '2026-09-30 08:00:01,100 +0200#INFO#com.sap.scc.jni.SccInstallation#main#          #Cloud Connector version 2.17.1 started',
+    '2026-09-30 08:01:00,000 +0200#INFO#com.sap.core.connectivity.tunnel.client.TunnelClient#tunnel-client-1-1#          #Tunnel connection established to connectivitytunnel.cf.eu10.hana.ondemand.com',
+    '2026-09-30 09:15:10,500 +0200#ERROR#com.sap.core.connectivity.tunnel.client.TunnelClient#tunnel-client-1-1#          #Could not connect to cloud',
+    'javax.net.ssl.SSLHandshakeException: PKIX path building failed',
+    '\tat sun.security.ssl.Alert.createSSLException(Alert.java:131)',
+    'Caused by: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target',
+    '2026-09-30 09:20:11,000 +0200#WARNING#com.sap.scc.rt.http#http-nio-8443-exec-3#          #Access denied to system erp.virtual:443 for path /sap/opu/odata/sap/API_X',
+    '2026-09-30 09:21:11,000 +0200#WARNING#com.sap.scc.rt.http#http-nio-8443-exec-4#          #Access denied to system erp.virtual:443 for path /sap/opu/odata/sap/API_Y',
+    '2026-09-30 10:00:00,000 +0200#ERROR#com.sap.scc.rt.backend#worker-7#          #Error connecting to backend s4h.internal.corp:44300: java.net.ConnectException: Connection refused'
+  ].join('\n');
+  const m = TS.getModule('scc');
+  const p = TS.parseText(scc, 'ljs_trace.log', m);
+  check('ljs_trace format detected as scc-hash', p.parser.id === 'scc-hash', p.parser.id);
+  check('Entry count = 6 (stack trace merged)', p.entries.length === 6, p.entries.length);
+  const err = p.entries[2];
+  check('Fields level/logger/thread/message', err.level === 'ERROR' && err.thread === 'tunnel-client-1-1' && err.message === 'Could not connect to cloud', JSON.stringify({ l: err.level, t: err.thread, m: err.message }));
+  check('Timestamp + offset', TS.fmtTime(err.t, err.off, true) === '2026-09-30 09:15:10.500', TS.fmtTime(err.t, err.off, true));
+  p.entries.forEach((e, i) => (e.id = i));
+  const r = TS.analyze(p.entries, m);
+  const ids = r.findings.map(f => f.rule.id);
+  ['pkix', 'tunnel-down', 'access-denied', 'conn-refused', 'lifecycle', 'tunnel-up'].forEach(id => check('Rule ' + id + ' detected', ids.includes(id), ids.join(',')));
+  check('Two "Access denied" merged into 1 group', r.groups.filter(g => g.sig.startsWith('Access denied')).length === 1, r.groups.map(g => g.sig).join(' | '));
+  check('Root cause exception', r.exceptions.some(x => x.name.endsWith('SunCertPathBuilderException')), r.exceptions.map(x => x.name).join(','));
+  check('Insight SCC version', r.insights.kv[0][1].includes('2.17.1'), r.insights.kv[0][1]);
+  check('Insight endpoint', r.insights.tables[0].rows.some(row => row[0] === 's4h.internal.corp:44300'), JSON.stringify(r.insights.tables[0].rows));
+
+  // SSO token without principal propagation (format as in scc_core.txt: connection ID before the message)
+  const ppLog = [
+    '2026-10-06 01:10:01,065 +0000#DEBUG#com.sap.core.connectivity.tunnel.core.Tunnel#tunnel-client-1-1#0x11aa#Subscribed connectionId 0x11aa to tunnel channel [id: 0x1] with tunnelId account:///sub-1/LOC_A',
+    "2026-10-06 01:10:01,065 +0000#DEBUG#com.sap.core.connectivity.tunnel.client.sso.SSOClientProcessor#tunnel-client-1-1#0x11aa#SSO handling not required. The authentication mode is set to 'NONE_CERTIFICATE_LOCAL' for: protocol http, virtualHost s4.virtual, virtualPort 443, connectionId 0x11aa",
+    '2026-10-06 01:10:01,114 +0000#DEBUG#com.sap.core.connectivity.protocol.http.handlers.HttpRequestStateHandler#tunnel-client-1-1#0x11aa#Start sending https://s4.virtual:443/sap/opu/odata/sap/API_X/Items?sap-client=100 to backend',
+    '2026-10-06 01:10:01,114 +0000#WARN#com.sap.core.connectivity.protocol.http.handlers.HttpNoAuthenticationHandler#tunnel-client-1-1#0x11aa#The Cloud Connector has not been configured for principal propagation. Please configure it or discontinue sending the SSO token in the request.',
+    '2026-10-06 01:10:01,165 +0000#DEBUG#com.sap.core.connectivity.protocol.http.handlers.HttpLocationHeaderHandler#tunnel-client-1-1#0x11aa#Location header represents unknown host: tenant.accounts.ondemand.com. The value of the header remains unchanged.'
+  ].join('\n');
+  const ppp = TS.parseText(ppLog, 'scc_core.txt', m);
+  ppp.entries.forEach((e, i) => (e.id = i));
+  const ppr = TS.analyze(ppp.entries, m), ppIds = ppr.findings.map(f => f.rule.id);
+  const ppT = ppr.insights.tables.find(t => /SSO token/.test(t.title));
+  check('SCC: SSO token without principal propagation → specific rule, not the generic one', ppIds.includes('pp-not-configured') && !ppIds.includes('principal-propagation'), ppIds.join(','));
+  check('SCC: per-mapping table (virtual host, mode, subaccount, IdP redirect, path)', ppT && ppT.rows.length === 1 && ppT.rows[0][0] === 's4.virtual:443' && ppT.rows[0][2] === 'NONE_CERTIFICATE_LOCAL' &&
+    ppT.rows[0][3] === 'sub-1 / LOC_A' && ppT.rows[0][4] === 1 && /tenant\.accounts\.ondemand\.com/.test(ppT.rows[0][5]) && /API_X/.test(ppT.rows[0][6]), JSON.stringify(ppT && ppT.rows));
+
+  // X.509 principal propagation active, but the backend accepts no SCC certificate (availability check with TLS trace) → IdP redirect
+  const sslDbg = (ts, id, msg) => `2026-11-02 ${ts} +0000#DEBUG#com.sap.scc.rt#notification-client-8-1#          #ssl_debug(${id}): ${msg}`;
+  const x509Log = [
+    sslDbg('03:07:34,636', 51, 'Sending v3 client_hello message to s4host.example.test:44300, requesting version 3.3...'),
+    sslDbg('03:07:34,637', 51, 'Received certificate_request handshake message.'),
+    sslDbg('03:07:34,637', 51, '  Accepted certificate authorities:'),
+    sslDbg('03:07:34,637', 51, '    CN=Corp Issuing CA,DC=corp,DC=test'),
+    sslDbg('03:07:34,637', 51, '    CN=*.example.test,OU=SAP Web AS,C=DE'),
+    sslDbg('03:07:34,638', 51, 'No client certificate available, sending empty certificate message...'),
+    '2026-11-02 03:30:09,229 +0000#DEBUG#com.sap.scc.security#tunnel-client-9-6#          #Generated X.509 certificate with subject CN=jane.doe@example.test',
+    '2026-11-02 03:30:09,267 +0000#DEBUG#com.sap.core.connectivity.spi.processing.AbstractProtocolProcessor#tunnel-client-9-6#0xe6ce#Successfully opened backend connection [id: 0xd5, L:/10.0.0.8:50345 - R:s4host.example.test/10.0.0.27:44300]',
+    '2026-11-02 03:30:09,267 +0000#DEBUG#com.sap.core.connectivity.protocol.http.handlers.HttpRequestStateHandler#tunnel-client-9-6#0xe6ce#Start sending http://s4.virtual:8000/sap/opu/odata/sap/API_GRMASTERDATA_SRV/$metadata to backend',
+    '2026-11-02 03:30:09,268 +0000#DEBUG#com.sap.core.connectivity.protocol.http.handlers.HttpAuthenticationHandler#tunnel-client-9-6#0xe6ce#Will use X.509 certificate for authentication to backend: 8b0b6590(SHA-256)',
+    '2026-11-02 03:30:09,291 +0000#DEBUG#com.sap.core.connectivity.protocol.http.handlers.HttpLocationHeaderHandler#tunnel-client-9-6#0xe6ce#Location header represents unknown host: tenant.accounts.ondemand.com. The value of the header remains unchanged: https://tenant.accounts.ondemand.com/saml2/idp/sso/tenant.accounts.ondemand.com?SAMLRequest=x'
+  ].join('\n');
+  const xp = TS.parseText(x509Log, 'scc_core.trc', m);
+  xp.entries.forEach((e, i) => (e.id = i));
+  const xr = TS.analyze(xp.entries, m), xIds = xr.findings.map(f => f.rule.id);
+  const xT = xr.insights.tables.find(t => /short-lived X\.509/.test(t.title)), hT = xr.insights.tables.find(t => /Client certificate requested/.test(t.title));
+  check('SCC: no client certificate for the backend + X.509 principal propagation redirected to the IdP', xIds.includes('backend-no-client-cert') && xIds.includes('pp-idp-redirect') && !xIds.includes('pp-not-configured'), xIds.join(','));
+  check('SCC: X.509 table (virtual → internal host, certificate subject, IdP redirect) + CA list per backend', xT && xT.rows[0][0] === 's4.virtual:8000' && xT.rows[0][1] === 's4host.example.test:44300' &&
+    xT.rows[0][2] === 'CN=jane.doe@example.test' && /tenant\.accounts/.test(xT.rows[0][4]) && hT && hT.rows[0][0] === 's4host.example.test:44300' && /Corp Issuing CA/.test(hT.rows[0][1]) && /^NO/.test(hT.rows[0][3]),
+    JSON.stringify([xT && xT.rows, hT && hT.rows]));
+
+  /* ---- Other formats ---- */
+  const acc = TS.parseText('10.1.2.3 - - [30/Sep/2026:09:00:01 +0200] "POST /login HTTP/1.1" 401 0', 'http_access.log', m);
+  check('HTTP access log', acc.parser.id === 'access' && acc.entries[0].level === 'WARN', acc.parser.id + ' ' + (acc.entries[0] || {}).level);
+  const tc = TS.parseText('15-Mar-2026 09:41:23.456 SEVERE [main] org.apache.catalina.startup.Catalina.start Failed', 'catalina.log', m);
+  check('Tomcat log', tc.parser.id === 'tomcat' && tc.entries[0].level === 'ERROR' && tc.entries[0].thread === 'main', tc.parser.id);
+  const pl = TS.parseText('line without timestamp\nsecond line', 'x.txt', m);
+  check('Plain text fallback', pl.parser.id === 'plain' && pl.entries.length === 2, pl.parser.id);
+
+  /* ---- ICM dev_icm (synthetic) ---- */
+  const icmText = [
+    '---------------------------------------------------',
+    'trc file: "dev_icm", trc level: 1, release: "793"',
+    '---------------------------------------------------',
+    'sysno      00',
+    'sid        ABC',
+    'relno      7930',
+    'patchno    100',
+    'profile    /usr/sap/ABC/D00/profile/ABC_D00_host',
+    '[Thr 140000000000001] Mon Oct  2 10:15:23:123 2026',
+    '[Thr 140000000000001] ICM running on host abchost',
+    '[Thr 140000000000001] SAPCRYPTOLIB version: 8.5.40',
+    '[Thr 140000000000001] Started service 44300 for protocol HTTPS',
+    '[Thr 140000000000002] Mon Oct  2 10:16:00:500 2026',
+    '[Thr 140000000000002] *** ERROR => IcmConnInitClientSSL: SapSSLSessionStartNB failed (-102): SSSLERR_PEER_CERT_UNTRUSTED [icxxconn_mt.c 2034]',
+    '[Thr 140000000000002] *** WARNING => IcmReadFromConn(id=8/1234): temporarily out of MPI buffers -> roll out [icxxthrio_mt 3018]',
+    '[Thr 140000000000003] *** ERROR => NiIConnect: connect to host target.example.test, service 443 failed (NIECONN_REFUSED) [nixxi.cpp 3500]'
+  ].join('\n');
+  const im = TS.getModule('icm');
+  const ip = TS.parseText(icmText, 'dev_icm', im);
+  check('ICM: dev_icm detected as sap-kernel', ip.parser.id === 'sap-kernel', ip.parser.id);
+  check('ICM: 7 entries (header block + 6 lines, timestamp lines consumed)', ip.entries.length === 7, ip.entries.length);
+  const ie = ip.entries.find(e => e.level === 'ERROR');
+  check('ICM: ERROR line inherits timestamp', ie && TS.fmtTime(ie.t, null, true) === '2026-10-02 10:16:00.500', ie && TS.fmtTime(ie.t, null, true));
+  check('ICM: function as logger, thread id', ie && ie.logger === 'IcmConnInitClientSSL' && ie.thread === '140000000000002', ie && ie.logger + ' ' + ie.thread);
+  ip.entries.forEach((e, i) => (e.id = i));
+  const ir = TS.analyze(ip.entries, im);
+  const iids = ir.findings.map(f => f.rule.id);
+  ['ssl-untrusted', 'mpi-buffers', 'ni-refused'].forEach(id => check('ICM: rule ' + id + ' detected', iids.includes(id), iids.join(',')));
+  check('ICM: generic SSL rule not duplicated', !iids.includes('ssl-handshake'), iids.join(','));
+  check('ICM: error codes as root cause', ['SSSLERR_PEER_CERT_UNTRUSTED', 'NIECONN_REFUSED'].every(c => ir.exceptions.some(x => x.name === c)), ir.exceptions.map(x => x.name).join(','));
+  const kv = Object.fromEntries(ir.insights.kv);
+  check('ICM: header insights (SID, release, crypto, services)', kv['SID / instance'] === 'ABC / 00' && kv['Kernel release / patch'] === '793, patch 100' && kv['CommonCryptoLib'] === '8.5.40' && kv['ICM services'] === 'HTTPS:44300', JSON.stringify(kv));
+  check('ICM: endpoint from "host X, service Y"', ir.insights.tables[1].rows.some(r => r[0] === 'target.example.test:443'), JSON.stringify(ir.insights.tables[1].rows));
+
+  /* ---- Web Dispatcher dev_webdisp (synthetic) ---- */
+  const wdpText = [
+    'trc file: "dev_webdisp", trc level: 1, release: "793"',
+    '[Thr 1] Mon Oct  2 10:20:00:000 2026',
+    '[Thr 1] *** ERROR => IcmHandleHttp: no backend system found for URL /sap/bc/ui5_ui5 [icrxx_mt.c 100]',
+    '[Thr 1] *** WARNING => server appsrv1.example.test:44300 marked as down [icrxx_mt.c 200]'
+  ].join('\n');
+  const wm = TS.getModule('wdp');
+  const wp = TS.parseText(wdpText, 'dev_webdisp', wm);
+  wp.entries.forEach((e, i) => (e.id = i));
+  const wr = TS.analyze(wp.entries, wm);
+  const wids = wr.findings.map(f => f.rule.id);
+  ['wdp-no-system', 'wdp-backend-down'].forEach(id => check('WDP: rule ' + id + ' detected', wids.includes(id), wids.join(',')));
+  check('WDP: backend server table', wr.insights.tables[0].rows.some(r => r[0] === 'appsrv1.example.test:44300' && r[2] === 1), JSON.stringify(wr.insights.tables[0].rows));
+
+  /* ---- dev_w* with component prefix (synthetic) ---- */
+  const dwText = [
+    'trc file: "dev_w0", trc level: 1, release: "793"',
+    'M Mon Oct  2 10:20:05 2026',
+    'M  *** ERROR => ThIErrHandle: work process terminated [thxxhead.c 100]',
+    'A  *** ERROR => ABAP runtime error TSV_TNEW_PAGE_ALLOC_FAILED'
+  ].join('\n');
+  const dw = TS.parseText(dwText, 'dev_w0', { parsers: [TS.sapKernel.parser], rules: [] });
+  check('dev_w: parsed with component prefix', dw.parser.id === 'sap-kernel' && dw.entries.length === 3, dw.parser.id + ' ' + dw.entries.length);
+  check('dev_w: time & component logger', dw.entries[2] && TS.fmtTime(dw.entries[2].t, null) === '2026-10-02 10:20:05' && dw.entries[2].logger === 'ABAP' && dw.entries[1].logger === 'ThIErrHandle',
+    dw.entries.map(e => TS.fmtTime(e.t, null) + '/' + e.logger).join(' | '));
+
+  /* ---- Table exports, SM59, certificates (synthetic) ---- */
+  const sm21 = 'Date\tTime\tInstance\tUser\tMessage ID\tMessage Text\n02.10.2026\t10:20:06\tappsrv1_ABC_00\tSAPSYS\tR49\tCommunication error, CPIC return code 020';
+  const st22 = 'Date;Time;Host;User;Client;Runtime Error;Exception;Program\n02.10.2026;10:20:07;appsrv1;JDOE;100;TSV_TNEW_PAGE_ALLOC_FAILED;;ZPROG';
+  const sm59 = 'Connection Test HTTP Destination Z_BACKEND\nConnection Test Action      Result\nStatus HTTP Response        500\nICM_HTTP_SSL_ERROR';
+  const pse = ['SSL client Anonymous', '   Subject:  CN=Test Root CA, O=Example, C=US', '   Issuer:   CN=Test Root CA, O=Example, C=US',
+    '   Validity  -  NotBefore:  Fri Nov 10 00:00:00 2006 (061110000000Z)', '                 NotAfter:  Thu Oct  1 00:00:00 2026 (261001000000Z)'].join('\n');
+  const C = TS.corr;
+  check('Classify sources', [['dev_webdisp', wdpText, 'wdp'], ['dev_w0', dwText, 'wp'], ['sm21_export.txt', sm21, 'sm21'], ['dumps.csv', st22, 'st22'], ['test.txt', sm59, 'sm59'], ['pse.txt', pse, 'strust']]
+    .every(([n, t, s]) => C.classify(n, t) === s), [['dev_webdisp', wdpText], ['dev_w0', dwText], ['sm21_export.txt', sm21], ['dumps.csv', st22], ['test.txt', sm59], ['pse.txt', pse]].map(([n, t]) => C.classify(n, t)).join(','));
+  const tbl = TS.tables.parse(sm21), map = TS.tables.mapColumns(tbl.header);
+  check('SM21 table columns', map.date === 0 && map.time === 1 && map.msgid === 4 && map.text === 5 && map.user === 3, JSON.stringify(map));
+  check('Date formats', TS.tables.parseDateTime('02.10.2026', '10:20:06') === Date.UTC(2026, 9, 2, 10, 20, 6) &&
+    TS.tables.parseDateTime('10/02/2026', '10:20:06') === Date.UTC(2026, 9, 2, 10, 20, 6) &&
+    TS.tables.parseDateTime('2026-10-02', '102006') === Date.UTC(2026, 9, 2, 10, 20, 6) &&
+    TS.tables.parseDateTime('46297', '') === Date.UTC(2026, 9, 2), 'parseDateTime');
+  const tests = C.parseSm59(sm59, {});
+  check('SM59 test parsed', tests.length === 1 && tests[0].dest === 'Z_BACKEND' && !tests[0].ok && tests[0].status === 500 && tests[0].codes.includes('ICM_HTTP_SSL_ERROR'), JSON.stringify(tests));
+  const gc = TS.x509.parseText(pse, 'pse.txt');
+  check('sapgenpse certificate text', gc.length === 1 && gc[0].cn === 'Test Root CA' && gc[0].pse === 'SSL client Anonymous' && gc[0].notAfter === Date.UTC(2026, 9, 1) &&
+    TS.x509.status(gc[0], Date.UTC(2026, 9, 2)).key === 'expired', JSON.stringify(gc));
+
+  // hand-made DER certificate (structure only, no valid signature)
+  const L = n => (n < 128 ? [n] : n < 256 ? [0x81, n] : [0x82, n >> 8, n & 255]);
+  const D = (tag, ...parts) => { const body = [].concat(...parts); return [tag, ...L(body.length), ...body]; };
+  const OID = s => { const p = s.split('.').map(Number), out = [p[0] * 40 + p[1]]; for (const v of p.slice(2)) { const st = [v & 127]; let x = v >> 7; while (x) { st.unshift((x & 127) | 128); x >>= 7; } out.push(...st); } return D(0x06, out); };
+  const STR = (tag, s) => D(tag, [...new TextEncoder().encode(s)]);
+  const NAME = cn => D(0x30, D(0x31, D(0x30, OID('2.5.4.3'), STR(0x0c, cn))));
+  const tbs = D(0x30, D(0xa0, D(0x02, [2])), D(0x02, [1]), D(0x30, OID('1.2.840.113549.1.1.11')), NAME('Test CA'),
+    D(0x30, STR(0x17, '250101000000Z'), STR(0x17, '270101000000Z')), NAME('host.example.test'),
+    D(0x30, D(0x30, OID('1.2.840.113549.1.1.1')), D(0x03, [0])),
+    D(0xa3, D(0x30, D(0x30, OID('2.5.29.17'), D(0x04, D(0x30, STR(0x82, 'host.example.test')))))));
+  const derBytes = D(0x30, tbs, D(0x30, OID('1.2.840.113549.1.1.11')), D(0x03, [0]));
+  const pem = '-----BEGIN CERTIFICATE-----\n' + btoa(String.fromCharCode(...derBytes)) + '\n-----END CERTIFICATE-----';
+  const dc = TS.x509.parseText(pem, 'host.cer');
+  check('X.509 DER certificate', dc.length === 1 && dc[0].cn === 'host.example.test' && dc[0].san[0] === 'host.example.test' && dc[0].notAfter === Date.UTC(2027, 0, 1) && /CN=Test CA/.test(dc[0].issuer), JSON.stringify(dc));
+
+  // server certificate with extensions + RSA 2048 key, embedded in a binary "PSE-like" container
+  const INT = bytes => D(0x02, bytes);
+  const modulus = [0x00, 0xC0].concat(new Array(255).fill(0x11));            // 2048-bit modulus
+  const rsaKey = D(0x03, [0], D(0x30, INT(modulus), INT([1, 0, 1])));
+  const ext = (o, val, crit) => D(0x30, OID(o), crit ? D(0x01, [0xff]) : [], D(0x04, val));
+  const tbs2 = D(0x30, D(0xa0, D(0x02, [2])), D(0x02, [0x0a, 0x0b]), D(0x30, OID('1.2.840.113549.1.1.5')), NAME('Issuing CA'),
+    D(0x30, STR(0x17, '250101000000Z'), STR(0x17, '261101000000Z')), NAME('erp.example.test'),
+    D(0x30, D(0x30, OID('1.2.840.113549.1.1.1')), rsaKey),
+    D(0xa3, D(0x30,
+      ext('2.5.29.19', D(0x30), true),
+      ext('2.5.29.15', D(0x03, [5, 0xa0]), true),
+      ext('2.5.29.37', D(0x30, OID('1.3.6.1.5.5.7.3.1'), OID('1.3.6.1.5.5.7.3.2'))),
+      ext('2.5.29.17', D(0x30, STR(0x82, '*.example.test'), D(0x87, [10, 0, 0, 1]))),
+      ext('2.5.29.35', D(0x30, D(0x80, [1, 2, 3, 4]))))));
+  const der2 = D(0x30, tbs2, D(0x30, OID('1.2.840.113549.1.1.5')), D(0x03, [0]));
+  const blob = new Uint8Array([0x50, 0x53, 0x45, 0x00, 0x01, 0x02].concat(der2, [0, 0, 0, 7, 9], derBytes, [0, 0]));
+  const fb = TS.x509.fromBytes(blob, 'SAPSSLS.pse');
+  const sc = fb.certs.find(c => c.cn === 'erp.example.test');
+  check('PSE scan: certificates found in binary container', fb.kind === 'SAP PSE' && fb.pse === 'SSL server Standard' && fb.certs.length === 2, `${fb.kind} / ${fb.pse} / ${fb.certs.length}`);
+  check('X.509 details: key, signature, KU, EKU, CA flag, SAN, IP, AKI', sc && sc.keyAlg === 'RSA' && sc.keyBits === 2048 && sc.sigAlg === 'sha1WithRSA' &&
+    sc.ku.join() === 'digitalSignature,keyEncipherment' && sc.eku.join() === 'serverAuth,clientAuth' && sc.ca === false && sc.san[0] === '*.example.test' &&
+    sc.sanIp[0] === '10.0.0.1' && sc.aki === '01:02:03:04' && sc.critical.length === 2, JSON.stringify(sc && { ...sc, der: undefined }));
+  check('Host name check (wildcard = one label)', TS.x509.matchesHost(sc, 'erp.example.test') && !TS.x509.matchesHost(sc, 'a.b.example.test') && !TS.x509.matchesHost(sc, 'example.test'), 'matchesHost');
+  const inv = TS.certs.dedupe(fb.certs.concat(TS.x509.fromBytes(blob, 'copy/SAPSSLS.pse').certs));
+  TS.certs.link(inv);
+  const fnd = TS.certs.analyze(inv, { ref: Date.UTC(2026, 8, 1), host: 'erp.example.test' });
+  const fids = fnd.map(f => f.id);
+  check('Certificates: duplicates merged, roles', inv.length === 2 && inv.every(c => c.where.length === 2) && inv.find(c => c.cn === 'erp.example.test').role === 'End entity', inv.map(c => c.cn + ':' + c.role + ':' + c.where.length).join(', '));
+  check('Certificates: findings (expiring, weak SHA-1, missing issuer, host match)', ['expiring90', 'weak-sig', 'missing-issuer', 'host'].every(id => fids.includes(id)) && !fids.includes('no-san'), fids.join(','));
+
+  // SSSLERR_CLIENT_CERT_UNTRUSTED: ICM rule + client certificate extraction (synthetic trace level 3 lines)
+  const ccText = [
+    '[Thr 7] Fri Oct  2 11:00:00:000 2026',
+    '[Thr 7] SSL NI-hdl 12: local=10.0.0.1:44300 peer=10.20.30.40:51234',
+    '[Thr 7] *** ERROR => IcmConnInitServerSSL: SapSSLSessionStartNB failed (-30): SSSLERR_CLIENT_CERT_UNTRUSTED [icxxconn_mt.c 2500]',
+    '[Thr 7]     Subject: CN=scc-system, O=Example',
+    '[Thr 7]     Issuer:  CN=Example Issuing CA, O=Example'
+  ].join('\n');
+  const cp = TS.parseText(ccText, 'dev_icm', im);
+  cp.entries.forEach((e, i) => (e.id = i));
+  const cr = TS.analyze(cp.entries, im);
+  const cids = cr.findings.map(f => f.rule.id);
+  check('ICM: SSSLERR_CLIENT_CERT_UNTRUSTED → specific rule (not the generic SSL rule)', cids.includes('ssl-client-untrusted') && !cids.includes('ssl-handshake'), cids.join(','));
+  const cct = cr.insights.tables.find(t => /Client certificates/.test(t.title));
+  check('ICM: client certificate subject / issuer / peer extracted', cct && cct.rows[0][0] === 'CN=scc-system, O=Example' && cct.rows[0][1] === 'CN=Example Issuing CA, O=Example' && cct.rows[0][2] === '10.20.30.40:51234', JSON.stringify(cct && cct.rows));
+
+  // Trace level 2: SCC presents a self-signed "CN=SCCPRD", icm/trusted_reverse_proxy_0 names the CA-signed certificate → forwarded user certificate rejected
+  const rpText = [
+    '[Thr 140211] Tue Nov  3 09:10:58:763 2026',
+    '[Thr 140211] HttpHandleCertificate: Client certificate received: with len=1187, subj="CN=SCCPRD", issuer="CN=SCCPRD", cipher="TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"',
+    '[Thr 140211] HttpCertIsReverseProxyTrustworthy: intermediate cert issuer "CN=SCCPRD" does not match trusted issuer "CN=Corp Issuing CA, DC=corp"',
+    '[Thr 140211] HttpCertIsReverseProxyTrustworthy: intermediate cert subject "CN=SCCPRD" does not match trusted subject "CN=SCCPRD, O=Corp, C=MY"',
+    '[Thr 140211] HttpIsReverseProxyTrustworthy: intermediary is NOT trusted',
+    '[Thr 140211] HTTP request [298/630835/1] Reject untrusted forwarded certificate (received via HTTPS with untrusted certificate): subject="CN=jane.doe@example.test", issuer="CN=SCCPRD"',
+    '[Thr 140211] HTTP request (raw) [298/630835/1]:',
+    '[Thr 140211]   GET /sap/opu/odata/sap/API_GRMASTERDATA_SRV/Feature HTTP/1.1',
+    '[Thr 140211] Connection Info: role=Server, local=s4host.example.test:44300, peer=10.0.0.8, protocol=HTTPS, SNI=s4host.example.test',
+    '[Thr 140211] Forwarded Client certificate: subject="CN=jane.doe@example.test", issuer="CN=SCCPRD"',
+    '[Thr 140211] HttpSrvHdlRequest: method: 1; path: /sap/opu/odata/sap/API_GRMASTERDATA_SRV/Feature'
+  ].join('\n');
+  const rpp = TS.parseText(rpText, 'dev_icm', im);
+  rpp.entries.forEach((e, i) => (e.id = i));
+  const rpr = TS.analyze(rpp.entries, im), rpT = rpr.insights.tables.find(t => /Reverse proxy certificate/.test(t.title));
+  check('ICM: reverse proxy certificate does not match icm/trusted_reverse_proxy → rule + table with the parameter to add', rpr.findings.some(f => f.rule.id === 'reverse-proxy-untrusted') &&
+    rpT && rpT.rows[0][0] === 'CN=SCCPRD / CN=SCCPRD' && rpT.rows[0][1] === '10.0.0.8' && rpT.rows[0][2] === 'SUBJECT="CN=SCCPRD, O=Corp, C=MY", ISSUER="CN=Corp Issuing CA, DC=corp"' && rpT.rows[0][3] === 1 &&
+    /jane\.doe@example\.test/.test(rpT.rows[0][4]) && rpT.rows[0][5] === 'icm/trusted_reverse_proxy_<n> = SUBJECT="CN=SCCPRD", ISSUER="CN=SCCPRD"', JSON.stringify([rpr.findings.map(f => f.rule.id), rpT && rpT.rows]));
+
+  // A later icm/trusted_reverse_proxy entry matches (QA1 pattern): the mismatch lines of the earlier entries are no finding; a browser
+  // request without client certificate is normal; the trusted proxy and the accepted user certificate are recorded
+  const okText = [
+    '[Thr 7001] Tue Nov  3 15:18:44:300 2026',
+    '[Thr 7001] HttpCertIsReverseProxyTrustworthy: intermediate cert issuer "CN=SCCQAS" does not match trusted issuer "CN=Corp Issuing CA, DC=corp"',
+    '[Thr 7001] HttpCertIsReverseProxyTrustworthy: intermediate cert subject "CN=SCCQAS" does not match trusted subject "CN=SCCQAS, O=Corp, C=MY"',
+    '[Thr 7001] HttpCertIsReverseProxyTrustworthy: intermediate is trustworthy (i:s):',
+    '[Thr 7001] "CN=SCCQAS:CN=SCCQAS" matches "CN=SCCQAS:CN=SCCQAS"',
+    '[Thr 7001] HttpIsReverseProxyTrustworthy: intermediary is trusted',
+    '[Thr 7001] HTTP request (raw) [147/1577511/1]:',
+    '[Thr 7001] Connection Info: role=Server, local=s4qas.example.test:44300, peer=10.0.0.8, protocol=HTTPS',
+    '[Thr 7001] Forwarded Client certificate: subject="CN=jane.doe@example.test", issuer="CN=SCCQAS"',
+    '[Thr 7001] HttpCertIsReverseProxyTrustworthy: client did not sent any cert ->intermediate not trustworthy',
+    '[Thr 7001] HttpIsReverseProxyTrustworthy: intermediary is NOT trusted',
+    '[Thr 7001] Forwarded Client certificate: reverse proxy did not forward a certificate'
+  ].join('\n');
+  const okp = TS.parseText(okText, 'dev_icm', im);
+  okp.entries.forEach((e, i) => (e.id = i));
+  const okr = TS.analyze(okp.entries, im), okx = TS.icm.proxyCerts(okp.entries);
+  check('ICM: proxy trusted by a later icm/trusted_reverse_proxy entry, browser request without certificate → no finding, trusted proxy recorded',
+    !okr.findings.some(f => f.rule.id === 'reverse-proxy-untrusted') && okx.length === 1 && okx[0].ok && okx[0].subject === 'CN=SCCQAS' && okx[0].issuer === 'CN=SCCQAS' && okx[0].n === 1 &&
+    [...okx[0].peers].join() === '10.0.0.8' && /jane\.doe/.test([...okx[0].fwd.keys()].join()), JSON.stringify([okr.findings.map(f => f.rule.id), okx.map(r => [r.subject, r.issuer, r.ok, r.n, [...r.peers], [...r.fwd]])]));
+
+  // Trust check: SSL server PSE without the client's CA → not trusted; after adding the CA → trusted
+  const caTbs = D(0x30, D(0xa0, D(0x02, [2])), D(0x02, [0x05]), D(0x30, OID('1.2.840.113549.1.1.11')), NAME('Issuing CA'),
+    D(0x30, STR(0x17, '240101000000Z'), STR(0x17, '340101000000Z')), NAME('Issuing CA'),
+    D(0x30, D(0x30, OID('1.2.840.113549.1.1.1')), rsaKey),
+    D(0xa3, D(0x30, ext('2.5.29.19', D(0x30, D(0x01, [0xff])), true))));
+  const caDer = D(0x30, caTbs, D(0x30, OID('1.2.840.113549.1.1.11')), D(0x03, [0]));
+  const pseNoCa = TS.x509.fromBytes(new Uint8Array([1, 2, 3].concat(derBytes)), 'SAPSSLS.pse');           // only an unrelated cert
+  const client = TS.x509.fromBytes(new Uint8Array(der2), 'client.cer');                                    // issued by "Issuing CA"
+  let set = TS.certs.dedupe(pseNoCa.certs.concat(client.certs)); TS.certs.link(set);
+  const t1 = TS.certs.trustCheck(set, 'SAPSSLS.pse', Date.UTC(2026, 8, 1));
+  check('Trust check: client certificate not trusted, issuer named', t1.length === 1 && t1[0].key === 'untrusted' && /Issuing CA/.test(t1[0].need), JSON.stringify(t1.map(r => [r.cert.cn, r.key, r.need])));
+  const pseWithCa = TS.x509.fromBytes(new Uint8Array([1, 2, 3].concat(derBytes, [0, 0], caDer)), 'SAPSSLS.pse');
+  set = TS.certs.dedupe(pseWithCa.certs.concat(client.certs)); TS.certs.link(set);
+  const t2 = TS.certs.trustCheck(set, 'SAPSSLS.pse', Date.UTC(2026, 8, 1));
+  check('Trust check: trusted after importing the CA into the PSE', t2.length === 1 && t2[0].key === 'trusted', JSON.stringify(t2.map(r => [r.cert.cn, r.key, r.text])));
+
+  // Serial numbers in every notation → one canonical key
+  const X5 = TS.x509;
+  check('Serial: hex with colons / leading 00 / 0x / openssl / decimal', X5.serialKey('0A:20:25:11:18:14:35:50') === 'a20251118143550' && X5.serialKey('00:8A:01') === '8a01' &&
+    X5.serialKey('0x8a01') === '8a01' && X5.serialKey('8a 01') === '8a01' && X5.serialKeys('4096 (0x1000)').join() === '1000' && X5.serialKeys('35377').join() === '35377,8a31' &&
+    X5.serialForms('8a01').dec === '35329' && X5.serialForms('8a01').colon === '8A:01' && !X5.serialKey('CN=x'), [X5.serialKey('0A:20:25:11:18:14:35:50'), X5.serialKeys('35377').join()].join(' '));
+  check('DN comparison: blanks, case, aliases (SP/ST, E/emailAddress), quoted values as in ICM traces', X5.normDn('CN=a, SP=Bavaria, E=x@y') === X5.normDn('cn = A,ST=bavaria,emailAddress=X@Y') &&
+    X5.normDn('CN=CA1, O="DigiCert, Inc.", C=US') === X5.normDn('CN=CA1, O=DigiCert, Inc., C=US'), X5.normDn('CN=CA1, O="DigiCert, Inc.", C=US'));
+
+  // Certificate references in an ICM trace (format as in dev_icm trace level 2/3) → matched to the DER certificate by issuer + serial
+  const icmCert = [
+    '[Thr 1] Thu Oct  8 19:33:50:058 2026',
+    '[Thr 1]  in/out: status = "resumed SSL session,TLSv1.2,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, received client cert"',
+    '[Thr 1]   Subject DN = "CN=client.example.test"',
+    '[Thr 1]   Issuer  DN = "CN=Issuing CA"',
+    '[Thr 1]   SerialNum  = 00:0A:0B',
+    '[Thr 2] CCL[SSL]: Cli-00068215: Error 0xA0600299(own certificate (chain) is expired - cannot be used for authentication):',
+    '[Thr 2] \tCLIENT certificate is expired, corrupt or not yet valid.',
+    '[Thr 2] \tSubject    : CN=DV1-500553185, O=SAP SE, C=DE',
+    '[Thr 2] \tNot before : 260702132311Z',
+    '[Thr 2] \tNot after  : 260801142311Z',
+    '[Thr 2] \tCurrent    : 20261008113331Z',
+    '[Thr 2]   SSL_get_state()==0x2171 "TLS write client certificate B"',
+    '[Thr 2]   cli SSL session PSE "/usr/sap/DV1/D00/sec/SAPSSL21001D.pse" (load=Mon Sep 28 01:13:45 2026, rcnt=1)'
+  ].join('\n');
+  const tr = X5.fromBytes(new TextEncoder().encode(icmCert), 'dev_icm');
+  const peer = tr.certs[0], own = tr.certs[1];
+  check('ICM trace: certificate references (subject / issuer / serial, CCL own certificate)', tr.kind === 'SAP trace (handshake)' && tr.certs.length === 2 &&
+    peer.subject === 'CN=client.example.test' && peer.issuer === 'CN=Issuing CA' && peer.serialKey === 'a0b' && /received client cert/.test(peer.observed[0].what) &&
+    own.notAfter === Date.UTC(2026, 7, 1, 14, 23, 11) && own.notBefore === Date.UTC(2026, 6, 2, 13, 23, 11) && /own certificate/.test(own.observed[0].what) && /SAPSSL21001D\.pse$/.test(own.observed[0].pse),
+    JSON.stringify(tr.certs.map(c => ({ s: c.subject, i: c.issuer, k: c.serialKey, nb: c.notBefore, na: c.notAfter, o: c.observed }))));
+  // der2 = erp.example.test, serial 0A:0B issued by "Issuing CA" — give the trace the same issuer + serial
+  const matched = TS.certs.dedupe(tr.certs.concat(client.certs).map(c => (c === peer ? Object.assign({}, c, { subject: 'CN=erp.example.test' }) : c)));
+  TS.certs.link(matched);
+  const mc = matched.find(c => c.der);
+  check('ICM trace ↔ certificate file merged by issuer + serial', matched.length === 2 && mc.observed && mc.observed.length === 1 && mc.where.length === 2 &&
+    TS.certs.analyze(matched, { ref: Date.UTC(2026, 8, 1) }).some(f => f.id === 'observed-matched'), JSON.stringify(matched.map(c => [c.cn, c.serialKey, !!c.der, (c.observed || []).length])));
+
+  // STRUSTSSO2 ACL: issuer + serial of the ticket-signing certificate
+  const acl = TS.certs.parseAcl('System\tClient\tSubject\tIssuer\tSerial\nABC\t100\tCN=erp.example.test\tCN=Issuing CA\t0A0B\nXYZ | 200 | CN=erp.example.test | CN=Issuing CA | 0A:0C');
+  const aclRes = TS.certs.aclCheck(set, acl, Date.UTC(2026, 8, 1));
+  check('STRUSTSSO2 ACL: rows parsed, serial match / serial mismatch (renewed System PSE)', acl.length === 2 && acl[0].sid === 'ABC' && acl[0].client === '100' && acl[1].serial === '0A:0C' &&
+    aclRes[0].key === 'ok' && aclRes[1].key === 'serial' && /0A:0B/.test(aclRes[1].text), JSON.stringify(aclRes.map(r => [r.row, r.key])));
+
+  // Same issuer + serial but different certificate → never merged, flagged
+  const forged = der2.slice(); forged[forged.lastIndexOf(0x78)] = 0x79;   // "*.example.test" → "*.eyample.test" in the SAN
+  const conf = TS.certs.dedupe(TS.x509.fromBytes(new Uint8Array(der2), 'a.cer').certs.concat(TS.x509.fromBytes(new Uint8Array(forged), 'b.cer').certs));
+  TS.certs.link(conf);
+  check('Serial conflict: two certificates with issuer + serial 0A:0B kept apart', conf.length === 2 && conf.every(c => c.serialConflict) &&
+    TS.certs.analyze(conf, { ref: Date.UTC(2026, 8, 1) }).some(f => f.id === 'serial-conflict'), conf.length);
+
+  // Cloud Connector TLS trace (scc_core.trc): backend server certificate (DN over several lines, Java dates) + CA list of the certificate request;
+  // SCC system certificate sys_cert.der (self-signed, no extensions) is not in the list, a CA-signed certificate would be
+  const tlsLine = (ts, msg) => `2026-11-02 03:29:00,${ts} +0000#DEBUG#com.sap.scc.rt#notification-client-8-1#          #${msg}`;
+  const sccTls = [
+    tlsLine('273', 'ssl_debug(52): Sending v3 client_hello message to s4host.example.test:44300, requesting version 3.3...'),
+    tlsLine('274', 'ssl_debug(52): ServerCertChain[0]:'),
+    'ssl_debug(52):   Version: 1', 'ssl_debug(52):   Serial Number: 0xa20261016062301', 'ssl_debug(52):   Signature Algorithm: SHA256withRSA',
+    'ssl_debug(52):   Issuer:  CN=*.example.test', 'ssl_debug(52):            OU=SAP Web AS', 'ssl_debug(52):            C=DE',
+    'ssl_debug(52):   Validity: ', 'ssl_debug(52):     Not Before: Fri Oct 16 06:23:01 UTC 2026', 'ssl_debug(52):     Not After:  Fri Jan 01 00:00:01 UTC 2038',
+    'ssl_debug(52):   Subject: CN=*.example.test', 'ssl_debug(52):            OU=SAP Web AS', 'ssl_debug(52):            C=DE', 'ssl_debug(52):   Public Key: RSA, 2048 bit', '',
+    tlsLine('274', 'SCCEndpointValidator received server certificate: Version: 1'),
+    'Serial number:       729624990164853505', 'Serial number (hex): 0xa20261016062301', 'Issuer: CN=*.example.test,OU=SAP Web AS,C=DE',
+    'Valid not before: Fri Oct 16 06:23:01 UTC 2026', '      not after: Fri Jan 01 00:00:01 UTC 2038', 'Subject: CN=*.example.test,OU=SAP Web AS,C=DE',
+    tlsLine('274', 'ssl_debug(52): Received certificate_request handshake message.'),
+    tlsLine('274', 'ssl_debug(52):   Accepted certificate authorities:'),
+    tlsLine('274', 'ssl_debug(52):     CN=Issuing CA'),
+    tlsLine('274', 'ssl_debug(52):     CN=*.example.test,OU=SAP Web AS,C=DE'),
+    tlsLine('274', 'SCCEndpointValidator received issuer certificates trusted by the server:'),
+    '[CN=Issuing CA, CN=*.example.test,OU=SAP Web AS,C=DE]',
+    tlsLine('274', 'ssl_debug(52): No client certificate available, sending empty certificate message...')
+  ].join('\n');
+  const stl = X5.fromBytes(new TextEncoder().encode(sccTls), 'scc_core.trc');
+  const sysTbs = D(0x30, D(0xa0, D(0x02, [2])), D(0x02, [0x21, 0xa7]), D(0x30, OID('1.2.840.113549.1.1.11')), NAME('SCCPRD'),
+    D(0x30, STR(0x17, '261013000000Z'), STR(0x17, '271013000000Z')), NAME('SCCPRD'), D(0x30, D(0x30, OID('1.2.840.113549.1.1.1')), rsaKey));
+  const sysDer = D(0x30, sysTbs, D(0x30, OID('1.2.840.113549.1.1.11')), D(0x03, [0]));
+  const sccSet = TS.certs.dedupe(stl.certs.concat(X5.fromBytes(new Uint8Array(sysDer), 'sys_cert.der').certs, X5.fromBytes(new Uint8Array(der2), 'scc.cer').certs));
+  TS.certs.link(sccSet);
+  const srv = sccSet.find(c => c.cn === '*.example.test'), sysC = sccSet.find(c => c.cn === 'SCCPRD');
+  const ccr = TS.certs.clientCertCheck(sccSet, stl.handshakes);
+  check('SCC TLS trace: server certificate (multi-line DN, Java dates) merged with the validator dump, CA list read', stl.certs.length === 2 && sccSet.filter(c => c.cn === '*.example.test').length === 1 &&
+    srv.issuer === 'CN=*.example.test, OU=SAP Web AS, C=DE' && srv.serialKey === 'a20261016062301' && srv.notAfter === Date.UTC(2038, 0, 1, 0, 0, 1) && srv.keyBits === 2048 &&
+    /server certificate of s4host\.example\.test:44300/.test(srv.observed[0].what) && stl.handshakes.length === 1 && stl.handshakes[0].cas.length === 2 && stl.handshakes[0].client === 'none',
+    JSON.stringify({ c: stl.certs.map(c => [c.subject, c.issuer, c.serialKey, c.notAfter]), h: stl.handshakes }));
+  check('SCC client certificate vs. CA list: self-signed system certificate rejected, CA-signed alternative and exact proxy parameter named', ccr.length === 1 && ccr[0].key === 'rejected' &&
+    sysC.role === 'Self-signed' && ccr[0].cands[0].cert === sysC && !ccr[0].cands[0].ok && ccr[0].cands.some(x => x.ok && x.cert.cn === 'erp.example.test') &&
+    ccr[0].fix.some(f => /SUBJECT="CN=SCCPRD", ISSUER="CN=SCCPRD"/.test(f)) && TS.certs.analyze(sccSet, { ref: Date.UTC(2026, 10, 2), handshakes: stl.handshakes }).some(f => f.id === 'client-ca-list'),
+    JSON.stringify(ccr.map(r => [r.key, r.text, r.cands.map(x => [x.cert.cn, x.ok])])));
+
+  // Real signatures (WebCrypto, ECDSA P-256): CA renewed with a new key, PSE still has the old CA certificate with the same name
+  const sigTest = (async () => {
+    const sub = crypto.subtle, alg = { name: 'ECDSA', namedCurve: 'P-256' };
+    const INTB = b => { let i = 0; while (i < b.length - 1 && b[i] === 0) i++; b = [...b.slice(i)]; if (b[0] & 0x80) b.unshift(0); return D(0x02, b); };
+    const mkCert = async (serial, issuerCN, subjectCN, pubKey, signKey, extra) => {
+      const spki = [...new Uint8Array(await sub.exportKey('spki', pubKey))];
+      const sigAlg = D(0x30, OID('1.2.840.10045.4.3.2'));
+      const tbsC = D(0x30, D(0xa0, D(0x02, [2])), D(0x02, serial), sigAlg, NAME(issuerCN), D(0x30, STR(0x17, '250101000000Z'), STR(0x17, '351231000000Z')), NAME(subjectCN), spki,
+        D(0xa3, D(0x30, ...extra)));
+      const raw = [...new Uint8Array(await sub.sign({ name: 'ECDSA', hash: 'SHA-256' }, signKey, new Uint8Array(tbsC)))];
+      return new Uint8Array(D(0x30, tbsC, sigAlg, D(0x03, [0], D(0x30, INTB(raw.slice(0, 32)), INTB(raw.slice(32))))));
+    };
+    const caExt = ski => [ext('2.5.29.19', D(0x30, D(0x01, [0xff])), true), ext('2.5.29.14', D(0x04, ski))];
+    const kOld = await sub.generateKey(alg, true, ['sign', 'verify']), kNew = await sub.generateKey(alg, true, ['sign', 'verify']), kLeaf = await sub.generateKey(alg, true, ['sign', 'verify']);
+    const rootOld = await mkCert([0x10], 'Sig Root', 'Sig Root', kOld.publicKey, kOld.privateKey, caExt([0xaa]));
+    const rootNew = await mkCert([0x11], 'Sig Root', 'Sig Root', kNew.publicKey, kNew.privateKey, caExt([0xbb]));
+    const leaf = await mkCert([0x00, 0x8a, 0x01], 'Sig Root', 'sig-client.example.test', kLeaf.publicKey, kNew.privateKey, [ext('2.5.29.19', D(0x30), true)]);   // no AKI: only the signature tells
+    const run = async pseParts => {
+      const pse = X5.fromBytes(new Uint8Array([1, 2, 3].concat(...pseParts.map(p => [...p, 0, 0]))), 'SAPSSLS.pse');
+      const s = TS.certs.dedupe(pse.certs.concat(X5.fromBytes(leaf, 'client.cer').certs));
+      await TS.certs.verify(s); TS.certs.link(s);
+      return { s, t: TS.certs.trustCheck(s, 'SAPSSLS.pse', Date.UTC(2026, 8, 1)) };
+    };
+    const a = await run([rootOld]);
+    const lc = a.s.find(c => c.cn === 'sig-client.example.test'), ro = a.s.find(c => c.serialKey === '10');
+    check('Signature: self-signed root verified with its own key', ro && ro.selfSig === true, ro && ro.selfSig);
+    check('Signature: old CA with the same name rejected (signature invalid) → not trusted, look-alike named with serial',
+      lc.missingIssuer && lc.wrongIssuer.length === 1 && lc.wrongIssuer[0].ev.sig === 'invalid' && a.t[0].key === 'untrusted' && a.t[0].lookalikes.length === 1 && /serial 10/.test(a.t[0].text) &&
+      TS.certs.analyze(a.s, { ref: Date.UTC(2026, 8, 1) }).some(f => f.id === 'wrong-issuer'), JSON.stringify({ wi: lc.wrongIssuer.map(w => w.ev), t: a.t.map(r => [r.key, r.text]) }));
+    const b = await run([rootOld, rootNew]);
+    const lb = b.s.find(c => c.cn === 'sig-client.example.test');
+    check('Signature: renewed CA in the PSE → trusted, issuer = serial 11, signatures verified', lb.parent && lb.parent.serialKey === '11' && lb.linkEv.sig === 'valid' &&
+      b.t[0].key === 'trusted' && b.t[0].proof === 'signatures verified' && lb.wrongIssuer.length === 1, JSON.stringify(b.t.map(r => [r.key, r.text])));
+    check('Serial lookup: decimal 35329 = hex 8A:01 → leaf; chain step to serial 11', (r => r.hits.length === 1 && r.hits[0] === lb)(TS.certs.findSerial(b.s, '35329')), '');
+  })().catch(e => check('Certificates: signature test exception', false, e.stack));
+
+  // end-to-end correlation
+  // SM59 result file saved 30 s after the ICM errors (no timestamp inside → file date is used)
+  const wall = Date.UTC(2026, 9, 2, 10, 16, 30), mtime = wall + new Date(wall).getTimezoneOffset() * 60000;
+  const cfiles = [['dev_icm', icmText], ['dev_webdisp', wdpText], ['dev_w0', dwText], ['sm21.txt', sm21], ['st22.csv', st22], ['sm59.txt', sm59], ['pse.txt', pse]]
+    .map(([name, text]) => ({ name, text, mtime, src: C.classify(name, text), shiftH: 0 }));
+  const cdata = C.build(cfiles, { datefmt: 'auto' });
+  const incs = C.incidents(cdata, 120000, null, null);
+  const titles = incs.map(i => i.hints.map(h => h.title));
+  check('Correlation: 2 incidents', incs.length === 2, incs.map(i => TS.fmtTime(i.t0, null) + ' ' + [...i.bySrc.keys()].join('+')).join(' | '));
+  check('Correlation: expired certificate explains SSL errors', titles[0] && titles[0].some(t => /not valid at the time/.test(t)), JSON.stringify(titles[0]));
+  check('Correlation: SM59 test with SSL error linked', titles[0] && titles[0].some(t => /SM59 test of Z_BACKEND/.test(t)), JSON.stringify(titles[0]));
+  check('Correlation: WDP backend + work process + dumps + memory', titles[1] && ['Web Dispatcher could not reach', 'Work process / dispatcher problems', 'ABAP dumps', 'Memory bottleneck'].every(s => titles[1].some(t => t.includes(s))), JSON.stringify(titles[1]));
+
+  // Correlation: Cloud Connector (UTC) + dev_icm (server time UTC+8, detected from the HTTP Date header)
+  const sccCorr = ppLog + '\n2026-10-06 01:10:01,066 +0000#DEBUG#com.sap.core.connectivity.spi.processing.AbstractProtocolProcessor#tunnel-client-1-1#0x11aa#Successfully opened backend connection [id: 0x8e8, L:/10.0.0.8:32471 - R:s4host.example.test/10.0.0.27:44300]';
+  const icmCorr = (peer) => [
+    'trc file: "dev_icm", trc level: 2, release: "916"',
+    '[Thr 9] Tue Oct  6 09:29:22:100 2026',
+    '[Thr 9]   SSL NI-hdl 705: local=10.0.0.27:44300  peer=' + peer + ':61154',
+    '[Thr 9] Connection Info: role=Server, local=s4host.example.test:44300, peer=' + peer + ', protocol=HTTPS',
+    '[Thr 9]   date: Tue, 06 Oct 2026 01:29:22 GMT',
+    '[Thr 9] Tue Oct  6 09:29:28:100 2026',
+    '[Thr 9] *** ERROR => SSL handshake with alm.example.test:443 failed after 80ms: SSSLERR_SSL_READ (-58) [icxxconn_mt.c 2034]'
+  ].join('\n');
+  const corrRun = icm => {
+    const fs2 = [['scc_core.txt', sccCorr], ['DV1_dev_icm.txt', icm]].map(([name, text]) => ({ name, text, mtime: wall, src: C.classify(name, text), shiftH: 0 }));
+    const d = C.build(fs2, { datefmt: 'auto', tz: 'auto' });
+    return { fs2, d, F: C.findings(d, null, null) };
+  };
+  const c1 = corrRun(icmCorr('10.0.0.14'));
+  const sccEv = c1.d.events.find(e => e.rule === 'pp-not-configured');
+  check('Correlation: "DV1_dev_icm.txt" → ICM, scc_core.txt → Cloud Connector', c1.fs2[0].src === 'scc' && c1.fs2[1].src === 'icm', c1.fs2.map(f => f.src).join(','));
+  check('Correlation: server time zone UTC+8 detected from the Date header, SCC (UTC) converted', c1.d.tz.off === 480 && c1.d.tz.converted.join() === 'scc_core.txt' && sccEv && TS.fmtTime(sccEv.t) === '2026-10-06 09:10:01',
+    JSON.stringify({ tz: c1.d.tz, t: sccEv && TS.fmtTime(sccEv.t) }));
+  const f1 = c1.F.map(f => f.id);
+  check('Correlation findings: principal propagation with mapping evidence + ICM trace does not cover the SCC requests', f1.includes('scc:pp-not-configured') && f1.includes('x:scc-uncovered:DV1_dev_icm.txt') &&
+    c1.F.find(f => f.id === 'scc:pp-not-configured').evidence.some(x => /s4\.virtual:443 → s4host\.example\.test:44300/.test(x) && /tenant\.accounts\.ondemand\.com/.test(x)), JSON.stringify(c1.F.map(f => [f.id, f.evidence])));
+  // ICM trace in the same period, but the client is not the SCC host → requests not visible; with the SCC IP as client → reached
+  const sccIn = sccCorr.replace(/01:10:0/g, '01:29:2');
+  const c2 = (icm => { const fs2 = [['scc_core.txt', sccIn], ['dev_icm', icm]].map(([name, text]) => ({ name, text, mtime: wall, src: C.classify(name, text), shiftH: 0 })); const d = C.build(fs2, { datefmt: 'auto', tz: 'auto' }); return C.findings(d, null, null).map(f => f.id); });
+  const miss = c2(icmCorr('10.0.0.14')), reach = c2(icmCorr('10.0.0.8'));
+  check('Correlation findings: SCC requests not visible in the ICM trace / reach the ICM', miss.includes('x:scc-missing:dev_icm') && reach.includes('x:scc-reached:dev_icm'), miss.join(',') + ' | ' + reach.join(','));
+
+  /* ---- Landscape map (synthetic example of the page) ---- */
+  const LS = TS.landscape, exFiles = TS.landscapeUi.exampleFiles();
+  const lsd = LS.diagnose(C.build(exFiles, { datefmt: 'auto', tz: 'auto' }), exFiles, {});
+  const lpp = lsd.paths.find(p => p.id === 'pp'), lweb = lsd.paths.find(p => p.id === 'web');
+  const lst = id => (lpp.steps.find(s => s.id === id) || {}).status;
+  const lrp = (lpp.fail && lpp.fail.items[0]) || {};
+  check('Landscape: example breaks at the S/4 ICM (reverse proxy) with the exact parameter; hops before it work, IdP redirect = symptom, ABAP not reached',
+    LS.pickPath(lsd) === 'pp' && lpp.fail && lpp.fail.id === 'icm' && lrp.id === 'icm:reverse-proxy-untrusted' && (lrp.params || [])[0] === 'icm/trusted_reverse_proxy_<n> = SUBJECT="CN=SCC-PRD", ISSUER="CN=SCC-PRD"' &&
+    ['user', 'app', 'tunnel', 'scc', 'scc-be'].every(id => lst(id) === 'ok') && lst('logon') === 'warn' && lpp.steps.find(s => s.id === 'logon').items[0].kind === 'symptom' && lst('abap') === 'blocked',
+    JSON.stringify(lpp.steps.map(s => s.id + ':' + s.status)));
+  check('Landscape: target S/4 PRD (SID PR1) and endpoint detected; Cloud Connector findings stay off the browser path',
+    lsd.target.sid === 'PR1' && lsd.target.tier === 'prd' && lsd.target.endpoint === 's4prd.example.test:44300' && !lweb.relevant && !lweb.fail && !lweb.warn,
+    JSON.stringify([lsd.target, lweb.relevant, lweb.fail && lweb.fail.id, lweb.warn && lweb.warn.id]));
+  // tunnel / proxy errors go to the tunnel hop, backend errors to the Cloud Connector → backend hop, access control to the Cloud Connector
+  const lsc = [{ name: 'ljs_trace.log', text: scc, mtime: wall, src: 'scc', shiftH: 0 }];
+  const lsp = LS.diagnose(C.build(lsc, { datefmt: 'auto', tz: 'auto' }), lsc, {}).paths.find(p => p.id === 'pp');
+  const hopIds = id => lsp.steps.find(s => s.id === id).items.map(i => i.id);
+  check('Landscape: SCC errors placed on the hop where they are (tunnel / Cloud Connector / backend)', hopIds('tunnel').includes('scc:pkix') &&
+    hopIds('scc').includes('scc:access-denied') && hopIds('scc-be').includes('scc:conn-refused') && lsp.fail.id === 'tunnel', JSON.stringify(lsp.steps.map(s => [s.id, s.status, s.items.map(i => i.id)])));
+  // a long-running dev_icm with an error of another day, and a second application (SSO token, principal type None, no redirect)
+  const OLD = '\n[Thr 9] Tue Oct  6 02:52:34:000 2026\n[Thr 9] *** ERROR => IcmConnInitServerSSL: SapSSLSessionStartNB returned after 163ms: SSSLERR_UNSUPP_PROTOCOL_VERSION (-108)';
+  const exMix = exFiles.map(f => /scc_core/.test(f.name) ? Object.assign({}, f, { text: f.text + '\n' + ppLog.split('\n').slice(0, 4).join('\n').replace(/2026-10-06 01:10/g, '2026-11-03 01:11') })
+    : /dev_icm/.test(f.name) ? Object.assign({}, f, { text: f.text + OLD }) : f);
+  const mixData = C.build(exMix, { datefmt: 'auto', tz: 'auto' });
+  const ppOf = d => d.paths.find(p => p.id === 'pp'), icmIds = d => ppOf(d).steps.find(s => s.id === 'icm').items.map(i => i.id);
+  const mAuto = LS.diagnose(mixData, exMix, {}), mAll = LS.diagnose(mixData, exMix, { window: 'all' });
+  check('Landscape: ICM errors of another day are outside the minutes of the requests (used again with "all entries")',
+    mAuto.window.auto && !icmIds(mAuto).some(id => /ssl-handshake|ssl-lib/.test(id)) && icmIds(mAll).some(id => /ssl-handshake|ssl-lib/.test(id)), JSON.stringify([icmIds(mAuto), icmIds(mAll)]));
+  const lfl = LS.flows(mixData.conns), fBw = lfl.find(f => f.vhost === 's4.virtual:443'), fGr = lfl.find(f => f.vhost === 's4-prd.virtual:443');
+  const sccPp = ppOf(mAuto).steps.find(s => s.id === 'scc').items.find(i => i.id === 'scc:pp-not-configured');
+  const dBw = fBw && LS.diagnose(mixData, exMix, { flow: fBw.key }), dGr = fGr && LS.diagnose(mixData, exMix, { flow: fGr.key });
+  check('Landscape: request flows per application — SSO token without redirect is a warning; each flow keeps its own verdict',
+    lfl.length === 2 && sccPp && sccPp.sev === 'medium' && dBw && !ppOf(dBw).fail && dGr && ppOf(dGr).fail && ppOf(dGr).fail.id === 'icm',
+    JSON.stringify([lfl.map(f => f.vhost), sccPp && sccPp.sev, dBw && ppOf(dBw).steps.map(s => s.id + ':' + s.status), dGr && ppOf(dGr).fail && ppOf(dGr).fail.id]));
+  // map replay: every request ends where its own evidence says — rejected at the ICM, or through to the application
+  const jr = lsd.requests || [];
+  check('Landscape replay: each example request stops at the ICM (forwarded certificate rejected at its time); nothing passes the failing hop',
+    jr.length === 3 && jr.every(r => r.stop === 'icm' && r.n === 6 && r.fate === 'fail' && /rejected the forwarded/.test(r.why)), JSON.stringify(jr));
+  const jm = mAuto.requests || [], jGr = jm.filter(r => /API_GRMASTERDATA/.test(r.path)), jBw = jm.filter(r => !/API_GRMASTERDATA/.test(r.path));
+  check('Landscape replay: a second application without user certificate goes through to the app while the X.509 requests stop at the ICM',
+    jGr.length === 3 && jGr.every(r => r.stop === 'icm') && jBw.length > 0 && jBw.every(r => r.stop === null && r.fate === 'ok'), JSON.stringify(jm.map(r => [r.id, r.stop, r.fate, r.path])));
+  const exOk = exFiles.map(f => /dev_icm/.test(f.name)
+    ? Object.assign({}, f, { text: f.text.replace(/intermediary is NOT trusted/g, 'intermediary is trusted').replace(/Reject untrusted forwarded certificate: /g, 'Forwarded Client certificate: ').replace(/302 Found/g, '200 OK').replace(/sap-authenticated: pending/g, 'sap-authenticated: true') })
+    : Object.assign({}, f, { text: f.text.split('\n').filter(l => !/Location header represents/.test(l)).join('\n') }));
+  const dOk = LS.diagnose(C.build(exOk, { datefmt: 'auto', tz: 'auto' }), exOk, {});
+  check('Landscape replay: trusted reverse proxy (QA1 pattern) — no failing hop, every request reaches the application',
+    !ppOf(dOk).fail && dOk.requests.length === 3 && dOk.requests.every(r => r.stop === null && r.fate === 'ok'), JSON.stringify([ppOf(dOk).steps.map(s => s.id + ':' + s.status), dOk.requests]));
+
+  /* ---- Traffic trace (synthetic) ---- */
+  const enc = new TextEncoder();
+  const hexDump = bytes => {
+    const out = [];
+    for (let o = 0; o < bytes.length; o += 16) {
+      const row = bytes.subarray(o, o + 16);
+      const hex = [...row].map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('').replace(/(.{8})/g, '$1 ').trim();
+      const asc = [...row].map(b => (b >= 32 && b < 127 && b !== 124 ? String.fromCharCode(b) : '.')).join('');
+      out.push(o.toString(16).toUpperCase().padStart(6, '0') + ' | ' + hex.padEnd(35) + ' | ' + asc);
+    }
+    return out.join('\n');
+  };
+  const blk = (type, conn, ts, bytes) => `${ts} +0000#INFO#tunnel#t1# #>>> ${type} data for connection ${conn}\n${hexDump(bytes)}\n${ts} +0000#INFO#tunnel#t1# #<<< ${type} data for connection ${conn}`;
+  const gz = async s => new Uint8Array(await new Response(new Blob([enc.encode(s)]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+
+  (async () => {
+    const body = '{"d":{"results":[1,2,3]}}';
+    const gzBody = await gz(body);
+    const respHead = enc.encode('HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-encoding: gzip\r\ncontent-length: ' + gzBody.length + '\r\n\r\n');
+    const half = Math.floor(gzBody.length / 2);
+    const trace = [
+      'Cloud Connector 2.18.2 running on host scc.example.test',
+      blk('Request', '0xaa01', '2026-10-01 01:44:10,347', enc.encode('GET http://vhost:44300/sap/opu/odata/sap/API_X/$metadata HTTP/1.1\r\nhost: vhost:44300\r\ncookie: SAP_SESSIONID=secret\r\n\r\n')),
+      blk('Response', '0xaa01', '2026-10-01 01:44:10,512', new Uint8Array([...respHead, ...gzBody.subarray(0, half)])),
+      blk('Response', '0xaa01', '2026-10-01 01:44:10,515', gzBody.subarray(half)),
+      blk('Request', '0xaa02', '2026-10-01 01:45:00,000', enc.encode('POST http://vhost:44300/sap/opu/odata/sap/API_X/Items HTTP/1.1\r\nx-csrf-token: abc\r\n\r\n{}')),
+      blk('Response', '0xaa02', '2026-10-01 01:45:00,100', enc.encode('HTTP/1.1 403 Forbidden\r\nx-csrf-token: Required\r\ncontent-length: 0\r\n\r\n')),
+      blk('Request', '0xaa03', '2026-10-01 01:46:00,000', enc.encode('GET http://vhost:44300/slow HTTP/1.1\r\n\r\n')),
+      blk('Request', '0xaa04', '2026-10-01 01:47:00,000', enc.encode('GET http://s4.virtual:8000/sap/opu/odata/sap/API_GRMASTERDATA_SRV/$metadata HTTP/1.1\r\nSAP-Connectivity-SSOToken-Base64: ZXlK\r\n\r\n')),
+      blk('Response', '0xaa04', '2026-10-01 01:47:00,050', enc.encode('HTTP/1.1 302 Moved temporarily\r\nsap-authenticated: pending\r\nlocation: https://tenant.accounts.ondemand.com/saml2/idp/sso/tenant?SAMLRequest=x\r\ncontent-length: 0\r\n\r\n'))
+    ].join('\n');
+    const T = TS.traffic;
+    const r = T.parseTrace(trace, 'tunnel_traffic_1111-2222_on_cf.eu10.hana.ondemand.com.trc');
+    check('Traffic: version & host info', r.info.version === '2.18.2' && r.info.host === 'scc.example.test', JSON.stringify(r.info));
+    check('Traffic: subaccount from file name', r.info.subaccount === '1111-2222_on_cf.eu10.hana.ondemand.com', r.info.subaccount);
+    check('Traffic: 8 blocks → 7 messages (body continuation merged)', r.blockCount === 8 && r.msgs.length === 7, r.blockCount + '/' + r.msgs.length);
+    for (const m of r.msgs) await T.parseHttp(m);
+    const pairs = T.buildPairs(r.msgs);
+    check('Traffic: 4 request pairs', pairs.length === 4, pairs.length);
+    const pr = pairs[3];
+    check('Traffic: SSO token + 302 to the IdP (sap-authenticated: pending) → propagated user not logged on, token masked', pr.sso && pr.loginRedirect && pr.idpHost === 'tenant.accounts.ondemand.com' &&
+      T.hints(pr).some(h => h[0] === 'high' && /NOT logged on/.test(h[1])) && T.mask('SAP-Connectivity-SSOToken-Base64', 'ZXlK') === '•••• [masked]', JSON.stringify([pr.badges, T.hints(pr)]));
+    const p1 = pairs[0], resp = p1.resps[0].h;
+    check('Traffic: gzip decompressed', resp.bodyText === body, resp.bodyText);
+    check('Traffic: status & duration', p1.status === 200 && p1.dur === 165, p1.status + ' ' + p1.dur);
+    check('Traffic: cookie masked', T.mask('cookie', 'SAP_SESSIONID=secret') === 'SAP_SESSIONID=••••', T.mask('cookie', 'SAP_SESSIONID=secret'));
+    check('Traffic: hint CSRF required', T.hints(pairs[1]).some(h => /CSRF/.test(h[1])), JSON.stringify(T.hints(pairs[1])));
+    check('Traffic: request without response', pairs[2].statusClass === 'none' && T.hints(pairs[2]).some(h => h[0] === 'high'), pairs[2].statusClass);
+  })().catch(e => check('Traffic: exception', false, e.stack)).then(() => sigTest).finally(report);
+
+  function report() {
+  const fails = results.filter(x => !x.ok).length;
+  document.getElementById('out').innerHTML =
+    `<h2 class="${fails ? 'fail' : 'ok'}">${results.length - fails}/${results.length} passed</h2>` +
+    results.map(x => `<div class="${x.ok ? 'ok' : 'fail'}">${x.ok ? '✔' : '✘'} ${x.name}${x.ok ? '' : ' — <code>' + String(x.info).replace(/</g, '&lt;') + '</code>'}</div>`).join('');
+  }
+})();
+</script>
+</body>
+</html>
